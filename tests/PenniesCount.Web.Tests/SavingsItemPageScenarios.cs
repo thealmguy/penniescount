@@ -46,6 +46,7 @@ public sealed class SavingsItemPageScenarios
     public void Given_a_selected_past_item_When_saving_allocation_Then_only_allocation_is_submitted_and_failures_are_visible(bool fail)
     {
         using var context = new BunitContext();
+        context.JSInterop.SetupModule("./Components/SavingsItemsList.razor.js").Mode = JSRuntimeMode.Loose;
         var handler = new ItemHandler(fail);
         context.Services.AddSingleton(new BudgetClient(new HttpClient(handler) { BaseAddress = new("http://localhost/") }));
         var notified = false;
@@ -57,10 +58,13 @@ public sealed class SavingsItemPageScenarios
         Assert.Single(page.FindAll("section[aria-label='Past savings goals']"));
         Assert.Contains("Needed now", page.Markup);
         page.Find("button").Click();
-        Assert.Single(page.FindAll("input"));
+        var modal = page.Find("dialog");
+        Assert.Equal("allocation-title", modal.GetAttribute("aria-labelledby"));
+        Assert.Single(modal.QuerySelectorAll("input"));
+        Assert.Contains("Example goal", modal.TextContent);
         page.Find("#allocated-total").Change("50");
 
-        page.Find("form").Submit();
+        page.Find("dialog form").Submit();
 
         page.WaitForAssertion(() =>
         {
@@ -69,11 +73,91 @@ public sealed class SavingsItemPageScenarios
             Assert.Equal(!fail, notified);
             if (fail)
             {
-                Assert.Contains("Reload and retry", page.Find("[role=alert]").TextContent);
+                Assert.Contains("Reload and retry", page.Find("dialog [role=alert]").TextContent);
+                Assert.Single(page.FindAll("[role=alert]"));
                 Assert.Equal("50", page.Find("#allocated-total").GetAttribute("value"));
             }
             else Assert.Empty(page.FindAll("form"));
         });
+    }
+
+    [Fact]
+    public void Given_a_failed_allocation_edit_When_cancelled_and_reopened_Then_the_modal_resets_errors_and_unsaved_changes()
+    {
+        using var context = new BunitContext();
+        context.JSInterop.SetupModule("./Components/SavingsItemsList.razor.js").Mode = JSRuntimeMode.Loose;
+        var handler = new ItemHandler(true);
+        context.Services.AddSingleton(new BudgetClient(new HttpClient(handler) { BaseAddress = new("http://localhost/") }));
+        var page = context.Render<SavingsItemsList>(parameters => parameters
+            .Add(x => x.Groups, [new(SavingsTerm.Short, [new(ItemHandler.Example, 75m, 25m, 3, ContributionState.Scheduled)])]));
+        page.Find("button").Click();
+        page.Find("#allocated-total").Change("50");
+        page.Find("dialog form").Submit();
+        page.WaitForAssertion(() => Assert.Single(page.FindAll("dialog [role=alert]")));
+
+        page.FindAll("dialog button").Single(x => x.TextContent == "Cancel").Click();
+
+        Assert.Empty(page.FindAll("form"));
+        page.Find("button").Click();
+        Assert.Empty(page.FindAll("[role=alert]"));
+        Assert.Equal("25", page.Find("#allocated-total").GetAttribute("value"));
+
+        page.Find("dialog").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
+
+        Assert.Empty(page.FindAll("form"));
+    }
+
+    [Fact]
+    public async Task Given_an_in_flight_allocation_save_When_escape_is_pressed_Then_the_modal_stays_open_until_the_save_completes()
+    {
+        using var context = new BunitContext();
+        context.JSInterop.SetupModule("./Components/SavingsItemsList.razor.js").Mode = JSRuntimeMode.Loose;
+        var reply = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Services.AddSingleton(new BudgetClient(new HttpClient(new PendingHandler(reply.Task))
+        {
+            BaseAddress = new("http://localhost/")
+        }));
+        var notified = false;
+        var page = context.Render<SavingsItemsList>(parameters => parameters
+            .Add(x => x.Groups, [new(SavingsTerm.Short, [new(ItemHandler.Example, 75m, 25m, 3, ContributionState.Scheduled)])])
+            .Add(x => x.OnSaved, () => notified = true));
+        page.Find("button").Click();
+        page.Find("#allocated-total").Change("50");
+
+        var submit = page.Find("dialog form").SubmitAsync();
+        page.WaitForAssertion(() => Assert.True(page.Find("dialog fieldset").HasAttribute("disabled")));
+        page.Find("dialog").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
+
+        Assert.Single(page.FindAll("dialog form"));
+        Assert.False(notified);
+        reply.SetResult(new(HttpStatusCode.OK) { Content = JsonContent.Create(ItemHandler.Example with { AllocatedAmount = 50m }) });
+        await submit;
+        Assert.Empty(page.FindAll("form"));
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public void Given_an_invalid_allocation_When_submitted_Then_validation_stays_in_the_modal_without_an_api_write()
+    {
+        using var context = new BunitContext();
+        context.JSInterop.SetupModule("./Components/SavingsItemsList.razor.js").Mode = JSRuntimeMode.Loose;
+        var handler = new ItemHandler(false);
+        context.Services.AddSingleton(new BudgetClient(new HttpClient(handler) { BaseAddress = new("http://localhost/") }));
+        var page = context.Render<SavingsItemsList>(parameters => parameters
+            .Add(x => x.Groups, [new(SavingsTerm.Short, [new(ItemHandler.Example, 75m, 25m, 3, ContributionState.Scheduled)])]));
+        page.Find("button").Click();
+        page.Find("#allocated-total").Change("-1");
+
+        page.Find("dialog form").Submit();
+
+        Assert.NotEmpty(page.Find("dialog .validation-errors").TextContent);
+        Assert.Null(handler.Allocation);
+        Assert.Single(page.FindAll("dialog form"));
+    }
+
+    private sealed class PendingHandler(Task<HttpResponseMessage> reply) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => reply;
     }
 
     private sealed class ItemHandler(bool fail) : HttpMessageHandler

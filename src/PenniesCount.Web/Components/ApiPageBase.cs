@@ -10,6 +10,8 @@ public abstract class ApiPageBase : ComponentBase
     protected bool Busy { get; private set; }
     protected string? Error { get; private set; }
 
+    protected void ClearError() => Error = null;
+
     protected async Task<bool> PerformAsync(Func<Task> operation)
     {
         if (Busy) return false;

@@ -74,7 +74,12 @@ public sealed class HomeScenarios
                 return Json(Example with { AllocatedAmount = 100m });
             }
             return Json(allocated
-                ? Budget(new(2027, 1, 15), 0m) with { TotalAllocated = 100m, UnallocatedBalance = 0m }
+                ? Budget(new(2027, 1, 15), 0m) with
+                {
+                    TotalAllocated = 100m, UnallocatedBalance = 0m,
+                    Groups = [new(SavingsTerm.Short,
+                        [new(Example with { AllocatedAmount = 100m }, 0m, 0m, 0, ContributionState.Funded)])]
+                }
                 : Budget(new(2027, 1, 15), 25m));
         }), TimeProvider.System);
         var page = context.Render<Home>();
@@ -86,8 +91,14 @@ public sealed class HomeScenarios
 
         page.WaitForAssertion(() =>
         {
+            Assert.Empty(page.FindAll("form"));
             Assert.Contains("100.00", page.Find("#total-allocated").TextContent);
+            Assert.Contains("0.00", page.Find("#unallocated").TextContent);
             Assert.Contains("0.00", page.Find("#monthly-required").TextContent);
+            var cells = page.FindAll("tbody td");
+            Assert.Contains("100.00", cells[2].TextContent);
+            Assert.Contains("0.00", cells[3].TextContent);
+            Assert.Contains("Fully allocated", cells[7].TextContent);
         });
     }
 
@@ -158,6 +169,7 @@ public sealed class HomeScenarios
     private static BunitContext CreateContext(HttpMessageHandler handler, TimeProvider clock)
     {
         var context = new BunitContext();
+        context.JSInterop.SetupModule("./Components/SavingsItemsList.razor.js").Mode = JSRuntimeMode.Loose;
         context.Services.AddSingleton(clock);
         context.Services.AddSingleton(new BudgetClient(new HttpClient(handler) { BaseAddress = new("http://localhost/") }));
         return context;

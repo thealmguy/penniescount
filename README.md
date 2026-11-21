@@ -91,6 +91,11 @@ one pool; combined allocations may exceed account funds, but each item's
 allocation must stay between zero and its target. General editing and deletion
 are not implemented.
 
+Update allocation opens a modal with the current amount. Validation and API
+errors stay in the modal without discarding the edit. A successful save closes
+the modal and immediately refreshes the budget figures and item rows. Cancel
+or Escape discards an unsaved edit; dismissal is disabled while saving.
+
 ## Monthly budgeting rules
 
 - Total savings is the sum of current account balances.
