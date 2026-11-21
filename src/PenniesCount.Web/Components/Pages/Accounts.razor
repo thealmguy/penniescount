@@ -1,0 +1,122 @@
+@page "/accounts"
+@rendermode InteractiveServer
+@inherits ApiPageBase
+
+<PageTitle>Savings accounts</PageTitle>
+<h1>Savings accounts</h1>
+<p>Record account totals, not deposit amounts. Every saved total records a history snapshot.</p>
+
+@if (Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Error</div>
+}
+@if (_saved is not null)
+{
+    <p role="status">@_saved</p>
+}
+<button class="btn btn-outline-secondary mb-3" disabled="@Busy" @onclick="RefreshAsync">Refresh accounts</button>
+@if (_accounts is null)
+{
+    <p>@(Busy ? "Loading accounts..." : "Accounts have not loaded. Retry with Refresh accounts.")</p>
+}
+else if (_accounts.Length == 0)
+{
+    <p>No savings accounts yet. Add your first account below.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table">
+            <thead><tr><th>Provider</th><th>Account</th><th>Type</th><th>Total funds</th><th>Action</th></tr></thead>
+            <tbody>
+                @foreach (var account in _accounts)
+                {
+                    <tr @key="account.Id">
+                        <td>@account.ProviderName</td><td>@account.AccountName</td>
+                        <td>@Display.AccountTypeName(account.Type)</td><td>@Display.Money(account.TotalFunds)</td>
+                        <td><button class="btn btn-sm btn-outline-primary" disabled="@Busy" @onclick="() => Select(account)">Update total</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+@if (_selected is not null)
+{
+    <h2>Update @_selected.AccountName</h2>
+    <EditForm Model="_balance" OnValidSubmit="SaveBalanceAsync" FormName="balance">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <fieldset disabled="@Busy">
+            <label for="balance-total" class="form-label">New total funds (GBP)</label>
+            <InputNumber id="balance-total" class="form-control" @bind-Value="_balance.TotalFunds" step="0.01" />
+            <button class="btn btn-primary mt-2" type="submit">Save total</button>
+            <button class="btn btn-secondary mt-2" type="button" @onclick="() => _selected = null">Cancel</button>
+        </fieldset>
+    </EditForm>
+}
+
+<h2 class="mt-4">Add savings account</h2>
+<EditForm Model="_create" OnValidSubmit="CreateAsync" FormName="create-account">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+    <fieldset disabled="@Busy">
+        <label for="provider" class="form-label">Provider name</label>
+        <InputText id="provider" class="form-control" @bind-Value="_create.ProviderName" maxlength="100" />
+        <label for="account-name" class="form-label">Account name</label>
+        <InputText id="account-name" class="form-control" @bind-Value="_create.AccountName" maxlength="100" />
+        <label for="account-type" class="form-label">Type</label>
+        <InputSelect id="account-type" class="form-select" @bind-Value="_create.Type">
+            @foreach (var type in Enum.GetValues<AccountType>())
+            {
+                <option value="@type">@Display.AccountTypeName(type)</option>
+            }
+        </InputSelect>
+        <label for="initial-funds" class="form-label">Total funds (GBP)</label>
+        <InputNumber id="initial-funds" class="form-control" @bind-Value="_create.TotalFunds" step="0.01" />
+        <button class="btn btn-primary mt-3" type="submit">Add account</button>
+    </fieldset>
+</EditForm>
+
+@code {
+    private AccountResponse[]? _accounts;
+    private CreateAccountRequest _create = new();
+    private UpdateBalanceRequest _balance = new();
+    private AccountResponse? _selected;
+    private string? _saved;
+    protected override Task OnInitializedAsync() => RefreshAsync();
+    private async Task RefreshAsync()
+    {
+        _selected = null;
+        await PerformAsync(async () => _accounts = await Api.GetAccountsAsync());
+    }
+    private void Select(AccountResponse account)
+    {
+        _selected = account;
+        _saved = null;
+        _balance = new() { TotalFunds = account.TotalFunds, Version = account.Version };
+    }
+    private async Task CreateAsync()
+    {
+        _saved = null;
+        await PerformAsync(async () =>
+        {
+            await Api.CreateAccountAsync(_create);
+            _create = new();
+            _saved = "Account saved.";
+            _accounts = await Api.GetAccountsAsync();
+        });
+    }
+    private async Task SaveBalanceAsync()
+    {
+        if (_selected is null) return;
+        _saved = null;
+        await PerformAsync(async () =>
+        {
+            await Api.UpdateBalanceAsync(_selected.Id, _balance);
+            _selected = null;
+            _saved = "Total saved. Balance history updated.";
+            _accounts = await Api.GetAccountsAsync();
+        });
+    }
+}

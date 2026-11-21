@@ -13,6 +13,18 @@ API; financial logic and SQL Server persistence live behind that API.
 
 From the repository root, in two terminals:
 
+First create/update the application's database explicitly:
+
+```powershell
+dotnet tool restore
+dotnet ef database update --project .\src\PenniesCount.Api
+```
+
+Migrations are never applied automatically at startup. The app uses a database
+named `PenniesCount` with Windows integrated authentication. Do not point tests
+at your real database: they create and delete uniquely named
+`PenniesCount_Test_<random>` databases on LocalDB.
+
 ```powershell
 dotnet run --project .\src\PenniesCount.Api
 dotnet run --project .\src\PenniesCount.Web
