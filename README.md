@@ -42,10 +42,27 @@ dotnet build .\PenniesCount.sln
 dotnet test .\PenniesCount.sln
 ```
 
+Run mutation testing for the date-derived savings category policy:
+
+```powershell
+Push-Location .\tests\PenniesCount.Api.Tests
+try { dotnet stryker } finally { Pop-Location }
+```
+
+The committed Stryker configuration uses the Complete mutation level and
+requires a 100% mutation score for `SavingsTermClassifier`. Strengthen tests for
+surviving mutants, then rerun mutation testing and the full test suite before
+committing and pushing a green iteration. Local reports are written under
+`StrykerOutput` and are not committed.
+
 Use fictional data for testing. Workbook imports, charts, deployment and
 authentication are intentionally outside this first pass.
 
 Licensed under [MIT](LICENSE).
+
+## Development approach
+
+Always use small iterative changes, through a test driven development approach where possible, applying BDD-style testing. Always cover non-trivial logic with tests. Apply mutation testing to help ensure tests are robust and test the right thing. Commit and push after each iteration is green and all mutants are killed.
 
 ## Accounts and savings items
 
@@ -53,8 +70,22 @@ Accounts hold a current total and immutable timestamped balance submissions.
 Submitting the same balance still records a snapshot. Concurrent changes are
 rejected with HTTP 409; refresh and retry rather than overwriting another update.
 
-Create Short, Medium or Long term savings items with a name, target, start and
-deadline, plus an initial allocation. An allocation-only action can replace the
+Create savings items with a name, target, start and deadline, plus an initial
+allocation. Categories are inferred from the save-by date using the API's local
+calendar date, so they change as deadlines draw nearer:
+
+- **Short term:** today through less than one calendar year away.
+- **Medium term:** one through five calendar years away, including both boundaries.
+- **Long term:** more than five calendar years away.
+- **Past savings goals:** any save-by date before today, whether fully allocated or not.
+
+Calendar-year anniversaries use 28 February for a leap-day date in non-leap years.
+There is no manual category selection or persisted category. Apply the latest
+migration explicitly using the database-update command above; existing dates,
+amounts and IDs are preserved. Rolling back that migration recreates the legacy
+category column as Short for every item; old manual categories cannot be recovered.
+
+An allocation-only action can replace the
 recorded amount later. It does not move money between accounts. Accounts form
 one pool; combined allocations may exceed account funds, but each item's
 allocation must stay between zero and its target. General editing and deletion
@@ -75,10 +106,13 @@ are not implemented.
   allocated items require zero.
 - If no payment date remains, the full remainder is **needed now** and included
   in the monthly total with a warning, including due/overdue items.
+- Past savings goals remain in allocation and contribution totals. Their
+  underfunded remainder is still needed now; fully allocated past goals require zero.
 - Each recommendation rounds upward to the nearest penny. The overview sums
   those displayed recommendations. Recommendations never change allocations.
 
-The API uses one host-local calendar date per dashboard request. History
+The API uses one host-local calendar date per dashboard or savings-item request
+for all derived categories and calculations. History
 timestamps use UTC. Refresh after writes or external changes; the open homepage
 also checks for a local date change every 30 seconds. Financial calculations
 are not persisted or performed in the UI.
@@ -104,21 +138,24 @@ dates must be on/after start dates. Past dates are supported.
 | GET | `/api/accounts/{id}/balance-history` | Array of `id`, `totalFunds`, `recordedAtUtc`, ordered by timestamp then ID |
 | GET | `/api/savings-items` | `asOfDate` and `items` array |
 | GET | `/api/savings-items/{id}` | One savings item |
-| POST | `/api/savings-items` | `name`, `type`, `targetAmount`, `allocatedAmount`, `startDate`, `targetDate`; returns item and resource location |
+| POST | `/api/savings-items` | `name`, `targetAmount`, `allocatedAmount`, `startDate`, `targetDate`; returns item and resource location |
 | PUT | `/api/savings-items/{id}/allocation` | `allocatedAmount`, `version`; returns updated item |
 | GET | `/api/dashboard` | Overview and calculated grouped items |
 
 Account `type` values: `0` Cash Account, `1` Cash ISA, `2` Stocks and Shares ISA,
-`3` Investment Account. Item `type` values: `0` Short, `1` Medium, `2` Long.
+`3` Investment Account. Derived item `type` values: `0` Short, `1` Medium,
+`2` Long, `3` Past savings goals. Creation requests no longer accept a category
+selection; an extra legacy `type` field is ignored, not used for categorisation.
 Account/item responses include their ID and an opaque `version` token. Send the
 latest token with every update; don't decode it or reuse a stale token.
 
 The dashboard returns `asOfDate`, `totalSavings`, `totalAllocated`,
 `unallocatedBalance`, `requiredMonthlySavings` and `groups`. Groups always
-include Short, Medium and Long in that order. Each group has `type` and `items`;
+include Short, Medium, Long and Past in that order. Each group has `type` and `items`;
 each row includes the item record, `remainingAmount`, `requiredContribution`,
 `remainingPayments` and `status`. Status values: `0` Fully allocated, `1` Not
-started, `2` Monthly, `3` Needed now. Items sort by deadline, name and ID.
+started, `2` Monthly, `3` Needed now. Items sort by deadline, name and ID within each group; the
+savings-item list sorts first by derived category, then deadline, name and ID.
 
 Creation returns 201; reads/updates return 200. Validation failures return 400
 Problem Details with field errors, missing IDs return 404, stale versions

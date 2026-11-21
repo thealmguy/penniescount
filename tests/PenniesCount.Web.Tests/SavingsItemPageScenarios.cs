@@ -21,7 +21,8 @@ public sealed class SavingsItemPageScenarios
         var page = context.Render<CreateSavingsItem>();
         page.WaitForAssertion(() => Assert.Equal("2027-01-15", page.Find("#start-date").GetAttribute("value")));
         page.Find("#item-name").Change("Example goal");
-        page.Find("#item-type").Change("Long");
+        Assert.Empty(page.FindAll("select"));
+        Assert.Contains("Categories follow the Save by date automatically", page.Markup);
         page.Find("#target-amount").Change("100");
         page.Find("#initial-allocation").Change("25");
         page.Find("#start-date").Change("2027-01-01");
@@ -34,7 +35,6 @@ public sealed class SavingsItemPageScenarios
             Assert.NotNull(handler.Created);
             Assert.Equal(new DateOnly(2027, 1, 1), handler.Created.StartDate);
             Assert.Equal(new DateOnly(2027, 4, 1), handler.Created.TargetDate);
-            Assert.Equal(SavingsTerm.Long, handler.Created.Type);
             Assert.Equal(25m, handler.Created.AllocatedAmount);
             Assert.Equal("http://localhost/", context.Services.GetRequiredService<NavigationManager>().Uri);
         });
@@ -43,16 +43,19 @@ public sealed class SavingsItemPageScenarios
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Given_a_selected_item_When_saving_allocation_Then_only_allocation_is_submitted_and_failures_are_visible(bool fail)
+    public void Given_a_selected_past_item_When_saving_allocation_Then_only_allocation_is_submitted_and_failures_are_visible(bool fail)
     {
         using var context = new BunitContext();
         var handler = new ItemHandler(fail);
         context.Services.AddSingleton(new BudgetClient(new HttpClient(handler) { BaseAddress = new("http://localhost/") }));
         var notified = false;
         var page = context.Render<SavingsItemsList>(parameters => parameters
-            .Add(x => x.Groups, [new(SavingsTerm.Short,
-                [new(ItemHandler.Example, 75m, 25m, 3, ContributionState.Scheduled)])])
+            .Add(x => x.Groups, [new(SavingsTerm.Past,
+                [new(ItemHandler.Example with { Type = SavingsTerm.Past }, 75m, 75m, 0, ContributionState.NeededNow)])])
             .Add(x => x.OnSaved, () => notified = true));
+        Assert.Equal("Past savings goals", page.Find("h2").TextContent);
+        Assert.Single(page.FindAll("section[aria-label='Past savings goals']"));
+        Assert.Contains("Needed now", page.Markup);
         page.Find("button").Click();
         Assert.Single(page.FindAll("input"));
         page.Find("#allocated-total").Change("50");

@@ -1,0 +1,15 @@
+{
+  "stryker-config": {
+    "project": "PenniesCount.Api.csproj",
+    "mutate": [ "**/SavingsTermClassifier.cs" ],
+    "test-case-filter": "FullyQualifiedName~SavingsCategoryScenarios",
+    "mutation-level": "Complete",
+    "concurrency": 1,
+    "reporters": [ "progress", "cleartext", "html", "json" ],
+    "thresholds": {
+      "high": 100,
+      "low": 100,
+      "break": 100
+    }
+  }
+}

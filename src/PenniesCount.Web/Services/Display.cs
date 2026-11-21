@@ -7,6 +7,14 @@ public static class Display
 {
     private static readonly CultureInfo Gbp = CultureInfo.GetCultureInfo("en-GB");
     public static string Money(decimal amount) => amount.ToString("C2", Gbp);
+    public static string SavingsCategoryName(SavingsTerm type) => type switch
+    {
+        SavingsTerm.Short => "Short term",
+        SavingsTerm.Medium => "Medium term",
+        SavingsTerm.Long => "Long term",
+        SavingsTerm.Past => "Past savings goals",
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
     public static string AccountTypeName(AccountType type) => type switch
     {
         AccountType.CashAccount => "Cash Account",

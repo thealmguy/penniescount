@@ -5,6 +5,7 @@ Savings Budget.xlsx
 .vs/
 .idea/
 TestResults/
+**/StrykerOutput/
 *.user
 *.suo
 *.mdf

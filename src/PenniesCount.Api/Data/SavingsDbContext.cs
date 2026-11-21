@@ -21,7 +21,6 @@ public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options)
                 table.HasCheckConstraint("CK_Items_Target", "[TargetAmount] > 0");
                 table.HasCheckConstraint("CK_Items_Allocation", "[AllocatedAmount] >= 0 AND [AllocatedAmount] <= [TargetAmount]");
                 table.HasCheckConstraint("CK_Items_Dates", "[TargetDate] >= [StartDate]");
-                table.HasCheckConstraint("CK_Items_Type", "[Type] BETWEEN 0 AND 2");
             });
         });
         model.Entity<Account>(entity =>

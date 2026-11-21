@@ -27,13 +27,13 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         var item = await SavingsItemScenarios.CreateAsync(client, 25m);
         using var future = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
-            Name = "Future example", Type = SavingsTerm.Long, TargetAmount = 100m, AllocatedAmount = 50m,
+            Name = "Future example", TargetAmount = 100m, AllocatedAmount = 50m,
             StartDate = new(2027, 2, 1), TargetDate = new(2027, 3, 1)
         });
         future.EnsureSuccessStatusCode();
         using var urgent = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
-            Name = "Urgent example", Type = SavingsTerm.Short, TargetAmount = 100m,
+            Name = "Urgent example", TargetAmount = 100m,
             StartDate = new(2027, 1, 1), TargetDate = new(2027, 1, 31)
         });
         urgent.EnsureSuccessStatusCode();
@@ -44,8 +44,8 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         Assert.Equal(75m, dashboard.TotalAllocated);
         Assert.Equal(75m, dashboard.UnallocatedBalance);
         Assert.Equal(125m, dashboard.RequiredMonthlySavings);
-        Assert.Equal(ContributionState.NeededNow, dashboard.Groups[0].Items.Single().Status);
-        Assert.Equal(ContributionState.NotStarted, dashboard.Groups[2].Items.Single().Status);
+        Assert.Equal(ContributionState.NeededNow, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Urgent example").Status);
+        Assert.Equal(ContributionState.NotStarted, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Future example").Status);
         Assert.Equal(dashboard.RequiredMonthlySavings, dashboard.Groups.SelectMany(x => x.Items).Sum(x => x.RequiredContribution));
 
         using var funds = await client.PutAsJsonAsync($"/api/accounts/{account.Id}/balance",

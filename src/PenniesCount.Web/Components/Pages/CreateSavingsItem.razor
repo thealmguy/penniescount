@@ -6,6 +6,9 @@
 <PageTitle>Add savings item</PageTitle>
 <h1>Add savings item</h1>
 <p>Record the target and any money already allocated. Details cannot be edited after creation in this first version.</p>
+<p>Categories follow the Save by date automatically: short term is less than one year away,
+    medium term is one to five years away, and long term is more than five years away.
+    Dates before today appear under Past savings goals.</p>
 @if (Error is not null)
 {
     <div class="alert alert-danger" role="alert">@Error</div>
@@ -23,13 +26,6 @@ else
         <fieldset disabled="@Busy">
             <label for="item-name" class="form-label">Savings item name</label>
             <InputText id="item-name" class="form-control" @bind-Value="_item.Name" maxlength="100" />
-            <label for="item-type" class="form-label">Type</label>
-            <InputSelect id="item-type" class="form-select" @bind-Value="_item.Type">
-                @foreach (var type in Enum.GetValues<SavingsTerm>())
-                {
-                    <option value="@type">@type term</option>
-                }
-            </InputSelect>
             <label for="target-amount" class="form-label">Target amount (GBP)</label>
             <InputNumber id="target-amount" class="form-control" @bind-Value="_item.TargetAmount" step="0.01" />
             <label for="initial-allocation" class="form-label">Already allocated (GBP)</label>

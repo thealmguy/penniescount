@@ -10,12 +10,12 @@
 }
 @foreach (var group in Groups)
 {
-    var type = group.Type;
-    <section class="mb-4" aria-label="@($"{type} term savings")">
-        <h2>@type term</h2>
+    var category = Display.SavingsCategoryName(group.Type);
+    <section class="mb-4" aria-label="@(group.Type == SavingsTerm.Past ? category : $"{category} savings")">
+        <h2>@category</h2>
         @if (group.Items.Length == 0)
         {
-            <p>No @type.ToString().ToLowerInvariant() term items.</p>
+            <p>@(group.Type == SavingsTerm.Past ? "No past savings goals." : $"No {category.ToLowerInvariant()} items.")</p>
         }
         else
         {

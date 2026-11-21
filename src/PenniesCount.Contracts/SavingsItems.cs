@@ -2,15 +2,12 @@ using System.ComponentModel.DataAnnotations;
 
 namespace PenniesCount.Contracts;
 
-public enum SavingsTerm { Short, Medium, Long }
+public enum SavingsTerm { Short, Medium, Long, Past }
 
 public sealed class CreateSavingsItemRequest : IValidatableObject
 {
     [Required, StringLength(100)]
     public string Name { get; set; } = "";
-
-    [EnumDataType(typeof(SavingsTerm))]
-    public SavingsTerm Type { get; set; }
 
     [Money(positive: true)]
     public decimal TargetAmount { get; set; }

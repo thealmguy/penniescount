@@ -114,9 +114,6 @@ namespace PenniesCount.Api.Migrations
                     b.Property<DateOnly>("TargetDate")
                         .HasColumnType("date");
 
-                    b.Property<int>("Type")
-                        .HasColumnType("int");
-
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -132,8 +129,6 @@ namespace PenniesCount.Api.Migrations
                             t.HasCheckConstraint("CK_Items_Dates", "[TargetDate] >= [StartDate]");
 
                             t.HasCheckConstraint("CK_Items_Target", "[TargetAmount] > 0");
-
-                            t.HasCheckConstraint("CK_Items_Type", "[Type] BETWEEN 0 AND 2");
                         });
                 });
 

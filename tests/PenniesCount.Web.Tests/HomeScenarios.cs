@@ -106,6 +106,36 @@ public sealed class HomeScenarios
         page.WaitForAssertion(() => Assert.Contains("No savings items yet", page.Markup));
     }
 
+    [Fact]
+    public void Given_a_goal_due_today_When_the_date_rolls_over_Then_home_renders_the_refreshed_past_group()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2027, 4, 15, 23, 59, 45, TimeSpan.Zero));
+        using var context = CreateContext(new ReplyHandler(_ =>
+        {
+            var date = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+            var type = date.Day == 15 ? SavingsTerm.Short : SavingsTerm.Past;
+            var row = new DashboardItemResponse(Example with { Type = type }, 75m, 75m, 0, ContributionState.NeededNow);
+            return Json(Budget(date, 75m) with
+            {
+                Groups = Enum.GetValues<SavingsTerm>().Select(category =>
+                    new SavingsGroupResponse(category, category == type ? [row] : [])).ToArray()
+            });
+        }), clock);
+        var page = context.Render<Home>();
+        page.WaitForAssertion(() => Assert.Contains("Example goal", page.Find("section[aria-label='Short term savings']").TextContent));
+        Assert.DoesNotContain("Example goal", page.Find("section[aria-label='Past savings goals']").TextContent);
+
+        clock.Advance(TimeSpan.FromSeconds(30));
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.Equal("16 Apr 2027", page.Find("#budget-date").TextContent);
+            Assert.Contains("Example goal", page.Find("section[aria-label='Past savings goals']").TextContent);
+            Assert.DoesNotContain("Example goal", page.Find("section[aria-label='Short term savings']").TextContent);
+            Assert.Contains("75.00", page.Find("#monthly-required").TextContent);
+        });
+    }
+
     private sealed class ReadyHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
