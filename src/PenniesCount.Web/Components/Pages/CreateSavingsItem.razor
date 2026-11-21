@@ -1,0 +1,66 @@
+@page "/savings-items/new"
+@rendermode InteractiveServer
+@inherits ApiPageBase
+@inject NavigationManager Navigation
+
+<PageTitle>Add savings item</PageTitle>
+<h1>Add savings item</h1>
+<p>Record the target and any money already allocated. Details cannot be edited after creation in this first version.</p>
+@if (Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Error</div>
+}
+@if (!_ready)
+{
+    <p>Loading today's budget date...</p>
+    <button class="btn btn-secondary" disabled="@Busy" @onclick="LoadDateAsync">Retry</button>
+}
+else
+{
+    <EditForm Model="_item" OnValidSubmit="SaveAsync" FormName="create-item">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <fieldset disabled="@Busy">
+            <label for="item-name" class="form-label">Savings item name</label>
+            <InputText id="item-name" class="form-control" @bind-Value="_item.Name" maxlength="100" />
+            <label for="item-type" class="form-label">Type</label>
+            <InputSelect id="item-type" class="form-select" @bind-Value="_item.Type">
+                @foreach (var type in Enum.GetValues<SavingsTerm>())
+                {
+                    <option value="@type">@type term</option>
+                }
+            </InputSelect>
+            <label for="target-amount" class="form-label">Target amount (GBP)</label>
+            <InputNumber id="target-amount" class="form-control" @bind-Value="_item.TargetAmount" step="0.01" />
+            <label for="initial-allocation" class="form-label">Already allocated (GBP)</label>
+            <InputNumber id="initial-allocation" class="form-control" @bind-Value="_item.AllocatedAmount" step="0.01" />
+            <label for="start-date" class="form-label">Start date</label>
+            <InputDate id="start-date" class="form-control" @bind-Value="_item.StartDate" />
+            <label for="target-date" class="form-label">Save by</label>
+            <InputDate id="target-date" class="form-control" @bind-Value="_item.TargetDate" />
+            <button type="submit" class="btn btn-primary mt-3">Add item</button>
+            <a class="btn btn-secondary mt-3" href="">Cancel</a>
+        </fieldset>
+    </EditForm>
+}
+
+@code {
+    private CreateSavingsItemRequest _item = new();
+    private bool _ready;
+    protected override Task OnInitializedAsync() => LoadDateAsync();
+    private async Task LoadDateAsync()
+    {
+        await PerformAsync(async () =>
+        {
+            var date = (await Api.GetItemsAsync()).AsOfDate;
+            _item.StartDate = date;
+            _item.TargetDate = date;
+            _ready = true;
+        });
+    }
+    private async Task SaveAsync()
+    {
+        if (await PerformAsync(async () => await Api.CreateItemAsync(_item)))
+            Navigation.NavigateTo("/");
+    }
+}

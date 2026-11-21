@@ -14,6 +14,7 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.MapGet("/api/health", () => new HealthResponse("Ready"));
 app.MapAccounts();
+app.MapSavingsItems();
 
 app.Run();
 

@@ -44,3 +44,16 @@ Use fictional data for testing. Workbook imports, charts, deployment and
 authentication are intentionally outside this first pass.
 
 Licensed under [MIT](LICENSE).
+
+## Accounts and savings items
+
+Accounts hold a current total and immutable timestamped balance submissions.
+Submitting the same balance still records a snapshot. Concurrent changes are
+rejected with HTTP 409; refresh and retry rather than overwriting another update.
+
+Create Short, Medium or Long term savings items with a name, target, start and
+deadline, plus an initial allocation. An allocation-only action can replace the
+recorded amount later. It does not move money between accounts. Accounts form
+one pool; combined allocations may exceed account funds, but each item's
+allocation must stay between zero and its target. General editing and deletion
+are not implemented.

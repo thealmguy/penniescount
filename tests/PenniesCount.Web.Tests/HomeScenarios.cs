@@ -11,7 +11,7 @@ namespace PenniesCount.Web.Tests;
 public sealed class HomeScenarios
 {
     [Fact]
-    public void Given_an_available_api_When_opening_home_Then_its_response_is_displayed()
+    public void Given_no_savings_items_When_opening_home_Then_it_shows_the_empty_budget()
     {
         using var context = new BunitContext();
         context.Services.AddSingleton(new BudgetClient(new HttpClient(new ReadyHandler())
@@ -21,7 +21,7 @@ public sealed class HomeScenarios
 
         var page = context.Render<Home>();
 
-        page.WaitForAssertion(() => Assert.Contains("API: Ready", page.Markup));
+        page.WaitForAssertion(() => Assert.Contains("No savings items yet", page.Markup));
     }
 
     private sealed class ReadyHandler : HttpMessageHandler
@@ -29,7 +29,7 @@ public sealed class HomeScenarios
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new HealthResponse("Ready"))
+                Content = JsonContent.Create(new SavingsItemsResponse(new(2027, 1, 15), []))
             });
     }
 }

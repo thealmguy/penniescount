@@ -89,6 +89,54 @@ namespace PenniesCount.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("PenniesCount.Api.Data.SavingsItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AllocatedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("TargetAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateOnly>("TargetDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SavingsItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Items_Allocation", "[AllocatedAmount] >= 0 AND [AllocatedAmount] <= [TargetAmount]");
+
+                            t.HasCheckConstraint("CK_Items_Dates", "[TargetDate] >= [StartDate]");
+
+                            t.HasCheckConstraint("CK_Items_Target", "[TargetAmount] > 0");
+
+                            t.HasCheckConstraint("CK_Items_Type", "[Type] BETWEEN 0 AND 2");
+                        });
+                });
+
             modelBuilder.Entity("PenniesCount.Api.Data.AccountBalanceSnapshot", b =>
                 {
                     b.HasOne("PenniesCount.Api.Data.Account", null)

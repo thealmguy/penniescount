@@ -1,45 +1,30 @@
 ﻿@page "/"
 
 @rendermode InteractiveServer
-@inject PenniesCount.Web.Services.BudgetClient Api
-@inject ILogger<Home> Logger
+@inherits ApiPageBase
 
 <PageTitle>Savings budget</PageTitle>
 
 <h1>Savings budget</h1>
 <p>Plan what your savings are for.</p>
-@if (_error is not null)
+<a class="btn btn-primary mb-3" href="savings-items/new">Add savings item</a>
+<button class="btn btn-outline-secondary mb-3" disabled="@Busy" @onclick="LoadAsync">Refresh budget</button>
+@if (Error is not null)
 {
-    <p role="alert">@_error</p>
-    <button class="btn btn-primary" @onclick="LoadAsync">Retry</button>
+    <div class="alert alert-danger" role="alert">@Error</div>
+}
+@if (_items is not null)
+{
+    <p>Budget date: @_items.AsOfDate.ToString("dd MMM yyyy")</p>
+    <SavingsItemsList Items="_items.Items" OnSaved="LoadAsync" />
 }
 else
 {
-    <p>@(_status is null ? "Connecting to the API..." : $"API: {_status}. No savings accounts or items yet.")</p>
+    <p>@(Busy ? "Loading budget..." : "Budget has not loaded. Retry with Refresh budget.")</p>
 }
 
 @code {
-    private string? _status;
-    private string? _error;
-
+    private SavingsItemsResponse? _items;
     protected override Task OnInitializedAsync() => LoadAsync();
-
-    private async Task LoadAsync()
-    {
-        _error = null;
-        try
-        {
-            _status = (await Api.GetHealthAsync()).Status;
-        }
-        catch (HttpRequestException)
-        {
-            Logger.LogWarning("API connection failed while loading the homepage.");
-            _error = "The API is unavailable. Start it and retry.";
-        }
-        catch (TaskCanceledException)
-        {
-            Logger.LogWarning("API request timed out while loading the homepage.");
-            _error = "The API took too long to respond. Retry.";
-        }
-    }
+    private async Task LoadAsync() => await PerformAsync(async () => _items = await Api.GetItemsAsync());
 }

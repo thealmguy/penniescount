@@ -6,9 +6,24 @@ public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options)
 {
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<AccountBalanceSnapshot> BalanceSnapshots => Set<AccountBalanceSnapshot>();
+    public DbSet<SavingsItem> SavingsItems => Set<SavingsItem>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        model.Entity<SavingsItem>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.TargetAmount).HasPrecision(18, 2);
+            entity.Property(x => x.AllocatedAmount).HasPrecision(18, 2);
+            entity.Property(x => x.Version).IsRowVersion();
+            entity.ToTable("SavingsItems", table =>
+            {
+                table.HasCheckConstraint("CK_Items_Target", "[TargetAmount] > 0");
+                table.HasCheckConstraint("CK_Items_Allocation", "[AllocatedAmount] >= 0 AND [AllocatedAmount] <= [TargetAmount]");
+                table.HasCheckConstraint("CK_Items_Dates", "[TargetDate] >= [StartDate]");
+                table.HasCheckConstraint("CK_Items_Type", "[Type] BETWEEN 0 AND 2");
+            });
+        });
         model.Entity<Account>(entity =>
         {
             entity.Property(x => x.ProviderName).HasMaxLength(100).IsRequired();

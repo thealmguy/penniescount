@@ -1,0 +1,75 @@
+@inherits ApiPageBase
+
+@if (Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Error</div>
+}
+@if (Items.Length == 0)
+{
+    <p>No savings items yet. Add your first item to start planning.</p>
+}
+@foreach (var type in Enum.GetValues<SavingsTerm>())
+{
+    <section class="mb-4" aria-label="@($"{type} term savings")">
+        <h2>@type term</h2>
+        @if (!Items.Any(x => x.Type == type))
+        {
+            <p>No @type.ToString().ToLowerInvariant() term items.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead><tr><th>Item</th><th>Target</th><th>Allocated</th><th>Remaining</th><th>Start</th><th>Save by</th><th>Action</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in Items.Where(x => x.Type == type))
+                        {
+                            <tr @key="item.Id">
+                                <td>@item.Name</td><td>@Display.Money(item.TargetAmount)</td>
+                                <td>@Display.Money(item.AllocatedAmount)</td><td>@Display.Money(item.TargetAmount - item.AllocatedAmount)</td>
+                                <td>@item.StartDate.ToString("dd MMM yyyy")</td><td>@item.TargetDate.ToString("dd MMM yyyy")</td>
+                                <td><button class="btn btn-sm btn-outline-primary" disabled="@Busy" @onclick="() => Select(item)">Update allocation</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+@if (_selected is not null)
+{
+    <h2>Allocation for @_selected.Name</h2>
+    <p>This is a recorded allocation from the pooled savings, not an account transfer.</p>
+    <EditForm Model="_allocation" OnValidSubmit="SaveAsync" FormName="allocation">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <fieldset disabled="@Busy">
+            <label for="allocated-total" class="form-label">Allocated amount (GBP), up to @Display.Money(_selected.TargetAmount)</label>
+            <InputNumber id="allocated-total" class="form-control" @bind-Value="_allocation.AllocatedAmount" step="0.01" />
+            <button type="submit" class="btn btn-primary mt-2">Save allocation</button>
+            <button type="button" class="btn btn-secondary mt-2" @onclick="() => _selected = null">Cancel</button>
+        </fieldset>
+    </EditForm>
+}
+
+@code {
+    [Parameter, EditorRequired] public SavingsItemResponse[] Items { get; set; } = [];
+    [Parameter] public EventCallback OnSaved { get; set; }
+    private SavingsItemResponse? _selected;
+    private UpdateAllocationRequest _allocation = new();
+    private void Select(SavingsItemResponse item)
+    {
+        _selected = item;
+        _allocation = new() { AllocatedAmount = item.AllocatedAmount, Version = item.Version };
+    }
+    private async Task SaveAsync()
+    {
+        if (_selected is null) return;
+        if (await PerformAsync(async () => await Api.UpdateAllocationAsync(_selected.Id, _allocation)))
+        {
+            _selected = null;
+            await OnSaved.InvokeAsync();
+        }
+    }
+}
