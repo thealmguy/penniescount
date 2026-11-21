@@ -51,6 +51,10 @@
 {
     <h2>Allocation for @_selected.Name</h2>
     <p>This is a recorded allocation from the pooled savings, not an account transfer.</p>
+    @if (Error is not null)
+    {
+        <p>If the record changed, refresh the budget, cancel this edit, then select the item again to reload its latest allocation.</p>
+    }
     <EditForm Model="_allocation" OnValidSubmit="SaveAsync" FormName="allocation">
         <DataAnnotationsValidator />
         <ValidationSummary />

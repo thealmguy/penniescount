@@ -56,6 +56,7 @@ public sealed class AccountScenarios(DatabaseFactory factory) : IClassFixture<Da
     [Theory]
     [InlineData(-1)]
     [InlineData(0.001)]
+    [InlineData(10000000000000000L)]
     public async Task Given_invalid_money_When_saving_Then_validation_rejects_it_without_a_snapshot(decimal amount)
     {
         using var client = factory.CreateClient();
@@ -102,5 +103,43 @@ public sealed class AccountScenarios(DatabaseFactory factory) : IClassFixture<Da
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
         return (await response.Content.ReadFromJsonAsync<AccountResponse>())!;
+    }
+
+    [Fact]
+    public async Task Given_the_maximum_supported_balance_When_creating_Then_decimal_precision_is_preserved()
+    {
+        using var client = factory.CreateClient();
+        var account = await CreateAsync(client, MoneyAttribute.Maximum);
+
+        var loaded = await client.GetFromJsonAsync<AccountResponse>($"/api/accounts/{account.Id}");
+
+        Assert.Equal(MoneyAttribute.Maximum, loaded!.TotalFunds);
+    }
+
+    [Fact]
+    public async Task Given_two_updates_with_the_same_version_When_they_race_Then_one_wins_and_only_its_snapshot_is_written()
+    {
+        using var client = factory.CreateClient();
+        var account = await CreateAsync(client, 5m);
+
+        var responses = await Task.WhenAll(new[] { 10m, 20m }.Select(amount =>
+            client.PutAsJsonAsync($"/api/accounts/{account.Id}/balance",
+                new UpdateBalanceRequest { TotalFunds = amount, Version = account.Version })));
+        try
+        {
+            Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+            Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+            var winner = (await responses.Single(response => response.IsSuccessStatusCode)
+                .Content.ReadFromJsonAsync<AccountResponse>())!;
+            var history = (await client.GetFromJsonAsync<BalanceSnapshotResponse[]>($"/api/accounts/{account.Id}/balance-history"))!;
+            Assert.Equal(2, history.Length);
+            Assert.Equal(winner.TotalFunds, history[^1].TotalFunds);
+            var reloaded = await client.GetFromJsonAsync<AccountResponse>($"/api/accounts/{account.Id}");
+            Assert.Equal(winner, reloaded);
+        }
+        finally
+        {
+            foreach (var response in responses) response.Dispose();
+        }
     }
 }

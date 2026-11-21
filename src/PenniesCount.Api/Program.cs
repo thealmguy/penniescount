@@ -7,6 +7,7 @@ using PenniesCount.Core;
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:5100");
 builder.Services.AddProblemDetails();
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IContributionSchedule, FirstOfMonthSchedule>();
 builder.Services.AddSingleton<BudgetCalculator>();
@@ -15,6 +16,7 @@ builder.Services.AddDbContext<SavingsDbContext>(options => options.UseSqlServer(
     ?? throw new InvalidOperationException("ConnectionStrings:Savings is required.")));
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseStatusCodePages();
 app.MapGet("/api/health", () => new HealthResponse("Ready"));
 app.MapAccounts();
 app.MapSavingsItems();
