@@ -50,7 +50,8 @@ public sealed class SavingsItemPageScenarios
         context.Services.AddSingleton(new BudgetClient(new HttpClient(handler) { BaseAddress = new("http://localhost/") }));
         var notified = false;
         var page = context.Render<SavingsItemsList>(parameters => parameters
-            .Add(x => x.Items, [ItemHandler.Example])
+            .Add(x => x.Groups, [new(SavingsTerm.Short,
+                [new(ItemHandler.Example, 75m, 25m, 3, ContributionState.Scheduled)])])
             .Add(x => x.OnSaved, () => notified = true));
         page.Find("button").Click();
         Assert.Single(page.FindAll("input"));

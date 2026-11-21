@@ -15,4 +15,12 @@ public static class Display
         AccountType.InvestmentAccount => "Investment Account",
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
+    public static string ContributionName(ContributionState status) => status switch
+    {
+        ContributionState.Funded => "Fully allocated",
+        ContributionState.NotStarted => "Not started",
+        ContributionState.Scheduled => "Monthly",
+        ContributionState.NeededNow => "Needed now",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
 }

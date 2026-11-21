@@ -4,15 +4,16 @@
 {
     <div class="alert alert-danger" role="alert">@Error</div>
 }
-@if (Items.Length == 0)
+@if (Groups.All(x => x.Items.Length == 0))
 {
     <p>No savings items yet. Add your first item to start planning.</p>
 }
-@foreach (var type in Enum.GetValues<SavingsTerm>())
+@foreach (var group in Groups)
 {
+    var type = group.Type;
     <section class="mb-4" aria-label="@($"{type} term savings")">
         <h2>@type term</h2>
-        @if (!Items.Any(x => x.Type == type))
+        @if (group.Items.Length == 0)
         {
             <p>No @type.ToString().ToLowerInvariant() term items.</p>
         }
@@ -20,14 +21,23 @@
         {
             <div class="table-responsive">
                 <table class="table align-middle">
-                    <thead><tr><th>Item</th><th>Target</th><th>Allocated</th><th>Remaining</th><th>Start</th><th>Save by</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Item</th><th>Target</th><th>Allocated</th><th>Remaining</th><th>Start</th><th>Save by</th><th>Required contribution</th><th>Status</th><th>Action</th></tr></thead>
                     <tbody>
-                        @foreach (var item in Items.Where(x => x.Type == type))
+                        @foreach (var row in group.Items)
                         {
+                            var item = row.Item;
                             <tr @key="item.Id">
                                 <td>@item.Name</td><td>@Display.Money(item.TargetAmount)</td>
-                                <td>@Display.Money(item.AllocatedAmount)</td><td>@Display.Money(item.TargetAmount - item.AllocatedAmount)</td>
+                                <td>@Display.Money(item.AllocatedAmount)</td><td>@Display.Money(row.RemainingAmount)</td>
                                 <td>@item.StartDate.ToString("dd MMM yyyy")</td><td>@item.TargetDate.ToString("dd MMM yyyy")</td>
+                                <td>@Display.Money(row.RequiredContribution)</td>
+                                <td>
+                                    <span class="@(row.Status == ContributionState.NeededNow ? "badge text-bg-warning" : "")">@Display.ContributionName(row.Status)</span>
+                                    @if (row.Status == ContributionState.Scheduled)
+                                    {
+                                        <small class="d-block">@row.RemainingPayments payment(s) remaining</small>
+                                    }
+                                </td>
                                 <td><button class="btn btn-sm btn-outline-primary" disabled="@Busy" @onclick="() => Select(item)">Update allocation</button></td>
                             </tr>
                         }
@@ -54,7 +64,7 @@
 }
 
 @code {
-    [Parameter, EditorRequired] public SavingsItemResponse[] Items { get; set; } = [];
+    [Parameter, EditorRequired] public SavingsGroupResponse[] Groups { get; set; } = [];
     [Parameter] public EventCallback OnSaved { get; set; }
     private SavingsItemResponse? _selected;
     private UpdateAllocationRequest _allocation = new();

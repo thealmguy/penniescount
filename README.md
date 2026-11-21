@@ -57,3 +57,29 @@ recorded amount later. It does not move money between accounts. Accounts form
 one pool; combined allocations may exceed account funds, but each item's
 allocation must stay between zero and its target. General editing and deletion
 are not implemented.
+
+## Monthly budgeting rules
+
+- Total savings is the sum of current account balances.
+- Total allocated includes all item allocations, even future-start items.
+- Unallocated = savings minus allocated. Positive means spare funds; negative
+  means over-allocation.
+- Active items spread their unallocated remainder across 1st-of-month dates
+  strictly after today and on/before their deadline. Today's allocation is
+  assumed already recorded, even on the 1st.
+- A GBP 1,200 target with GBP 300 allocated on 15 January and a 15 April deadline
+  has three payments left (1 February, 1 March, 1 April): GBP 300 per month.
+- Future-start items require zero until their inclusive start date. Fully
+  allocated items require zero.
+- If no payment date remains, the full remainder is **needed now** and included
+  in the monthly total with a warning, including due/overdue items.
+- Each recommendation rounds upward to the nearest penny. The overview sums
+  those displayed recommendations. Recommendations never change allocations.
+
+The API uses one host-local calendar date per dashboard request. History
+timestamps use UTC. Refresh after writes or external changes; the open homepage
+also checks for a local date change every 30 seconds. Financial calculations
+are not persisted or performed in the UI.
+
+`IContributionSchedule` in Core is the replacement seam for payment-date rules;
+`FirstOfMonthSchedule` is the only supported policy in this pass.

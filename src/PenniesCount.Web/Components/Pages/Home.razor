@@ -2,6 +2,8 @@
 
 @rendermode InteractiveServer
 @inherits ApiPageBase
+@implements IAsyncDisposable
+@inject TimeProvider Clock
 
 <PageTitle>Savings budget</PageTitle>
 
@@ -13,10 +15,33 @@
 {
     <div class="alert alert-danger" role="alert">@Error</div>
 }
-@if (_items is not null)
+@if (_budget is not null)
 {
-    <p>Budget date: @_items.AsOfDate.ToString("dd MMM yyyy")</p>
-    <SavingsItemsList Items="_items.Items" OnSaved="LoadAsync" />
+    <p>Budget date: <span id="budget-date">@_budget.AsOfDate.ToString("dd MMM yyyy")</span></p>
+    @if (Error is not null)
+    {
+        <p role="status">Displayed values are from the last successful refresh.</p>
+    }
+    <section aria-label="Savings overview" class="mb-4">
+        <h2>Overview</h2>
+        <dl class="row g-3 budget-overview">
+            <div class="col-sm-6 col-xl-3"><dt>Total savings</dt><dd id="total-savings">@Display.Money(_budget.TotalSavings)</dd></div>
+            <div class="col-sm-6 col-xl-3"><dt>Total allocated</dt><dd id="total-allocated">@Display.Money(_budget.TotalAllocated)</dd></div>
+            <div class="col-sm-6 col-xl-3">
+                <dt>Unallocated (under/over allocation)</dt><dd id="unallocated">@Display.Money(_budget.UnallocatedBalance)</dd>
+                <span>@(_budget.UnallocatedBalance < 0 ? "Over-allocated" : _budget.UnallocatedBalance > 0 ? "Spare funds" : "Fully allocated")</span>
+            </div>
+            <div class="col-sm-6 col-xl-3"><dt>Required monthly savings</dt><dd id="monthly-required">@Display.Money(_budget.RequiredMonthlySavings)</dd></div>
+        </dl>
+        <p>For your next 1st-of-month allocation. Today's allocation is assumed already recorded.
+            Items not yet started contribute zero. Recommendations round upward to the nearest penny.</p>
+        @if (_budget.Groups.SelectMany(x => x.Items).Any(x => x.Status == ContributionState.NeededNow))
+        {
+            <div class="alert alert-warning" role="status">Some items need funds before the next monthly payment, or are overdue.
+                Their full remainder is included in Required monthly savings and marked Needed now below.</div>
+        }
+    </section>
+    <SavingsItemsList Groups="_budget.Groups" OnSaved="LoadAsync" />
 }
 else
 {
@@ -24,7 +49,47 @@ else
 }
 
 @code {
-    private SavingsItemsResponse? _items;
+    private DashboardResponse? _budget;
+    private readonly CancellationTokenSource _stopping = new();
+    private PeriodicTimer? _timer;
+    private Task? _watch;
     protected override Task OnInitializedAsync() => LoadAsync();
-    private async Task LoadAsync() => await PerformAsync(async () => _items = await Api.GetItemsAsync());
+    private async Task LoadAsync() => await PerformAsync(async () => _budget = await Api.GetDashboardAsync());
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _timer = new PeriodicTimer(TimeSpan.FromSeconds(30), Clock);
+            _watch = WatchDateAsync(_timer);
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task WatchDateAsync(PeriodicTimer timer)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_stopping.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    if (_budget is not null && DateOnly.FromDateTime(Clock.GetLocalNow().DateTime) != _budget.AsOfDate)
+                    {
+                        await LoadAsync();
+                        StateHasChanged();
+                    }
+                });
+            }
+        }
+        catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _stopping.CancelAsync();
+        _timer?.Dispose();
+        if (_watch is not null) await _watch;
+        _stopping.Dispose();
+    }
 }

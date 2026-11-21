@@ -4,6 +4,7 @@ using PenniesCount.Web.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseUrls("http://localhost:5101");
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddHttpClient<BudgetClient>(client =>

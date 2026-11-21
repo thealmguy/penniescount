@@ -24,6 +24,20 @@ h1:focus {
     outline: none;
 }
 
+.budget-overview dd {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0;
+}
+
+fieldset {
+    max-width: 38rem;
+}
+
+fieldset .form-label {
+    margin-top: 0.75rem;
+}
+
 .valid.modified:not([type=checkbox]) {
     outline: 1px solid #26b050;
 }
