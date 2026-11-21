@@ -49,17 +49,19 @@ Push-Location .\tests\PenniesCount.Api.Tests
 try { dotnet stryker } finally { Pop-Location }
 ```
 
-Run the drawdown lifecycle gate in the same test directory:
+Run the savings ledger gate in the same test directory:
 
 ```powershell
 Push-Location .\tests\PenniesCount.Api.Tests
-try { dotnet stryker --config-file stryker-drawdowns.json } finally { Pop-Location }
+try { dotnet stryker --config-file stryker-ledger.json } finally { Pop-Location }
 ```
 
-The drawdown configuration targets the new lifecycle and changed allocation,
-removal and dashboard calculations. It requires 100% and excludes logging
+The ledger configuration targets the ledger, payment, reversal and drawdown
+endpoints, the ledger entity rules, and the item and dashboard code that reads
+or writes ledger entries. It requires 100% and excludes logging
 calls/logger category names and database-generated/default entity initializers
-from mutation, not financial logic. Its character spans isolate changed logic
+from mutation, not financial logic. It runs four test sessions in parallel,
+each against its own LocalDB databases, and takes several minutes. Its character spans isolate changed logic
 in existing files; update those spans when that code moves. Both configurations use local reports
 only; no code or reports are uploaded.
 
@@ -100,7 +102,9 @@ amounts and IDs are preserved. Rolling back that migration recreates the legacy
 category column as Short for every item; old manual categories cannot be recovered.
 
 An allocation-only action can replace the
-recorded amount later. It does not move money between accounts. Accounts form
+recorded total later; it is stored as a signed **funding adjustment** for the
+difference (an unchanged total records nothing but still advances the version).
+It does not move money between accounts. Accounts form
 one pool; combined allocations may exceed account funds, but each item's
 allocation must stay between its total drawdowns and its target. Allocation
 means **total funding to date**, including money already spent. General item
@@ -111,14 +115,34 @@ errors stay in the modal without discarding the edit. A successful save closes
 the modal and immediately refreshes the budget figures and item rows. Cancel
 or Escape discards an unsaved edit; dismissal is disabled while saving.
 
+### Savings item ledger
+
+Each savings item works like a sub-account with an append-only ledger. Entry
+types (`type` values) are `0` Opening funding, `1` Allocation payment,
+`2` Funding adjustment, `3` Drawdown and `4` Reversal. Total funded allocation
+is the sum of effective opening, payment and adjustment entries; drawn down is
+the sum of effective drawdowns. Entries are never edited or deleted. A mistake
+is undone by a **reversal**: a new entry that references the original, copies
+its amount and effective date (so history-based figures stay correct) and
+marks it reversed. An entry can be reversed once; reversals cannot themselves be
+reversed. Reversals that would take funding below recorded drawdowns or above
+the target are rejected.
+
+Creating an item with a nonzero allocation records an opening funding entry
+dated today. **Record allocation payment** on the item page records money set
+aside on a given date (today or earlier); payments cannot take funding above the
+target. Any effective payment dated on an allocation day counts as that day's
+payment having been made.
+
 ### Drawdowns and removal
 
 Use **Details / draw down** on a budget row to record spending in one amount or
 in parts. Each drawdown records a positive GBP amount, spending date and optional
 description (up to 200 characters). Dates default to the API's local today;
-past dates are allowed, future dates are rejected. Active-item history can be
-corrected or deleted with confirmation. The recorded UTC timestamp is preserved
-when correcting a record; this is correctable history, not an immutable audit ledger.
+past dates are allowed, future dates are rejected. Correcting an active drawdown
+reverses it and records a replacement with a new ID, a new recorded timestamp
+and a link to the drawdown it replaces. Deleting (shown as **Reverse** in the UI)
+records a reversal; the original remains visible in the item's history.
 
 Drawdowns do not change the original target or total funded allocation.
 **Available to spend** is funded allocation minus drawdowns; **Funding remaining**
@@ -138,10 +162,16 @@ It excludes the item from every item-derived budget sum but does not manufacture
 spending or update accounts. **Removed items** retains read-only figures and
 history; there is no restore action. Removed items reject all further writes.
 
-Apply the new additive `SavingsDrawdowns` migration explicitly using the database
-update command above. Existing items and amounts are preserved and start active
-with no drawdowns. Rolling back this migration deletes drawdown history and
-removal state; it cannot be recovered by reapplying the migration.
+Apply the `SavingsDrawdowns` migration and then the `SavingsLedger` migration
+explicitly using the database update command above. `SavingsLedger` moves
+existing drawdowns into the ledger with their IDs, dates, descriptions and
+recorded timestamps, and gives each funded item one opening funding entry for
+its existing total, dated to the item's start date and flagged as inferred
+(`isInferred`) because earlier payment history was never recorded. Rolling back
+`SavingsLedger` keeps only drawdowns that are still effective; payments,
+adjustments and reversal history are lost. Rolling back `SavingsDrawdowns`
+deletes drawdown history and removal state; neither can be recovered by
+reapplying a migration.
 
 ## Monthly budgeting rules
 
@@ -195,11 +225,15 @@ dates must be on/after start dates. Past dates are supported.
 | GET | `/api/savings-items/{id}` | One savings item |
 | POST | `/api/savings-items` | `name`, `targetAmount`, `allocatedAmount`, `startDate`, `targetDate`; returns item and resource location |
 | PUT | `/api/savings-items/{id}/allocation` | `allocatedAmount`, `version`; returns updated item |
-| GET | `/api/savings-items/{id}/drawdowns` | `asOfDate`, current `item` (including version), and `drawdowns` |
-| GET | `/api/savings-items/{id}/drawdowns/{drawdownId}` | One drawdown record |
+| GET | `/api/savings-items/{id}/drawdowns` | `asOfDate`, current `item` (including version), and effective (non-reversed) `drawdowns` |
+| GET | `/api/savings-items/{id}/drawdowns/{drawdownId}` | One drawdown record, including reversed ones |
 | POST | `/api/savings-items/{id}/drawdowns` | `amount`, `spentOn`, optional `description`, item `version`; returns drawdown and resource location |
-| PUT | `/api/savings-items/{id}/drawdowns/{drawdownId}` | `amount`, `spentOn`, optional `description`, item `version`; returns corrected drawdown |
-| DELETE | `/api/savings-items/{id}/drawdowns/{drawdownId}` | JSON body with item `version`; returns 204 |
+| PUT | `/api/savings-items/{id}/drawdowns/{drawdownId}` | `amount`, `spentOn`, optional `description`, item `version`; reverses the original and returns the replacement drawdown |
+| DELETE | `/api/savings-items/{id}/drawdowns/{drawdownId}` | JSON body with item `version`; records a reversal and returns 204 |
+| GET | `/api/savings-items/{id}/ledger` | `asOfDate`, current `item` and every ledger `entries` record |
+| GET | `/api/savings-items/{id}/ledger/{entryId}` | One ledger entry |
+| POST | `/api/savings-items/{id}/payments` | `amount`, `paidOn`, item `version`; returns the payment entry and resource location |
+| POST | `/api/savings-items/{id}/ledger/{entryId}/reversal` | item `version`; returns the reversal entry and resource location |
 | PUT | `/api/savings-items/{id}/removal` | item `version`; returns removed item |
 | GET | `/api/dashboard` | Overview and calculated grouped items |
 
@@ -210,11 +244,15 @@ selection; an extra legacy `type` field is ignored, not used for categorisation.
 Account/item responses include their ID and an opaque `version` token. Send the
 latest token with every update; don't decode it or reuse a stale token.
 Item responses also include `drawnDownAmount`, `availableAmount` and `isRemoved`.
-Every drawdown mutation advances the parent item's version. Reload item/history
-after create, correction or deletion to obtain the next token; stale allocation,
+Every ledger mutation advances the parent item's version. Reload item/history
+after any write to obtain the next token; stale allocation, payment, reversal,
 spending and removal requests conflict rather than overwriting concurrent changes.
-Each history record contains `id`, `amount`, `spentOn`, `description` and
-`recordedAtUtc`, ordered by spending date, recorded timestamp and ID.
+Each drawdown record contains `id`, `amount`, `spentOn`, `description`,
+`recordedAtUtc`, `replacesDrawdownId` and `isReversed`. Each ledger entry contains
+`id`, `type`, `amount`, `effectiveDate`, `description`, `recordedAtUtc`,
+`isInferred`, `reversesEntryId`, `replacesEntryId` and `isReversed`. Histories are
+ordered by effective date, recorded timestamp and ID. Writes to an entry that is
+already reversed return 409.
 
 The dashboard returns `asOfDate`, `totalSavings`, `totalAllocated`,
 `unallocatedBalance`, `requiredMonthlySavings` and `groups`. Groups always

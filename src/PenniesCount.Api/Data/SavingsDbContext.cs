@@ -7,7 +7,7 @@ public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options)
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<AccountBalanceSnapshot> BalanceSnapshots => Set<AccountBalanceSnapshot>();
     public DbSet<SavingsItem> SavingsItems => Set<SavingsItem>();
-    public DbSet<SavingsItemDrawdown> Drawdowns => Set<SavingsItemDrawdown>();
+    public DbSet<SavingsLedgerEntry> LedgerEntries => Set<SavingsLedgerEntry>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -17,7 +17,11 @@ public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options)
             entity.Property(x => x.TargetAmount).HasPrecision(18, 2);
             entity.Property(x => x.AllocatedAmount).HasPrecision(18, 2);
             entity.Property(x => x.Version).IsRowVersion();
-            entity.HasMany(x => x.Drawdowns).WithOne().HasForeignKey(x => x.SavingsItemId);
+            entity.Ignore(x => x.EffectiveEntries);
+            entity.Ignore(x => x.FundedAmount);
+            entity.Ignore(x => x.DrawnDownAmount);
+            entity.Ignore(x => x.History);
+            entity.HasMany(x => x.Entries).WithOne().HasForeignKey(x => x.SavingsItemId);
             entity.ToTable("SavingsItems", table =>
             {
                 table.HasCheckConstraint("CK_Items_Target", "[TargetAmount] > 0");
@@ -25,13 +29,28 @@ public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options)
                 table.HasCheckConstraint("CK_Items_Dates", "[TargetDate] >= [StartDate]");
             });
         });
-        model.Entity<SavingsItemDrawdown>(entity =>
+        model.Entity<SavingsLedgerEntry>(entity =>
         {
+            entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.Amount).HasPrecision(18, 2);
             entity.Property(x => x.Description).HasMaxLength(200);
-            entity.HasIndex(x => new { x.SavingsItemId, x.SpentOn, x.RecordedAtUtc, x.Id });
-            entity.ToTable("Drawdowns", table =>
-                table.HasCheckConstraint("CK_Drawdowns_Amount", "[Amount] > 0"));
+            entity.Ignore(x => x.FundingEffect);
+            entity.Ignore(x => x.DrawdownEffect);
+            entity.HasIndex(x => new { x.SavingsItemId, x.EffectiveDate, x.RecordedAtUtc, x.Id });
+            entity.HasIndex(x => x.ReversesEntryId).IsUnique();
+            entity.HasOne<SavingsLedgerEntry>().WithMany().HasForeignKey(x => x.ReversesEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SavingsLedgerEntry>().WithMany().HasForeignKey(x => x.ReplacesEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable("LedgerEntries", table =>
+            {
+                table.HasCheckConstraint("CK_Ledger_Type", "[Type] BETWEEN 0 AND 4");
+                table.HasCheckConstraint("CK_Ledger_Amount",
+                    "([Type] IN (2, 4) AND [Amount] <> 0) OR ([Type] NOT IN (2, 4) AND [Amount] > 0)");
+                table.HasCheckConstraint("CK_Ledger_Reversal",
+                    "([Type] = 4 AND [ReversesEntryId] IS NOT NULL) OR ([Type] <> 4 AND [ReversesEntryId] IS NULL)");
+                table.HasCheckConstraint("CK_Ledger_Replacement", "[ReplacesEntryId] IS NULL OR [Type] = 3");
+            });
         });
         model.Entity<Account>(entity =>
         {

@@ -1,6 +1,7 @@
 @baseUrl = http://localhost:5100
 @itemId = REPLACE_WITH_ITEM_ID
 @drawdownId = REPLACE_WITH_DRAWDOWN_ID
+@entryId = REPLACE_WITH_LEDGER_ENTRY_ID
 @version = REPLACE_WITH_LATEST_ITEM_VERSION
 
 ### Create a fictional fully funded item (only against a disposable database)
@@ -38,7 +39,7 @@ Content-Type: application/json
 ### One drawdown
 GET {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns/{{drawdownId}}
 
-### Correct spending; use the latest item version
+### Correct spending: reverses the original and returns a replacement with a new ID
 PUT {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns/{{drawdownId}}
 Content-Type: application/json
 
@@ -49,8 +50,40 @@ Content-Type: application/json
   "version": "{{version}}"
 }
 
-### Delete spending, not the item; then reload history
+### Delete spending: appends a reversal (the drawdown stays in history); then reload history
 DELETE {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns/{{drawdownId}}
+Content-Type: application/json
+
+{
+  "version": "{{version}}"
+}
+
+### Full ledger: payments, drawdowns, adjustments and reversals
+GET {{baseUrl}}/api/savings-items/{{itemId}}/ledger
+
+### One ledger entry
+GET {{baseUrl}}/api/savings-items/{{itemId}}/ledger/{{entryId}}
+
+### Record an allocation payment (cannot take funding above the target)
+POST {{baseUrl}}/api/savings-items/{{itemId}}/payments
+Content-Type: application/json
+
+{
+  "amount": 300,
+  "paidOn": "2026-02-02",
+  "version": "{{version}}"
+}
+
+### Reverse any non-reversal entry once; returns the new reversal entry
+POST {{baseUrl}}/api/savings-items/{{itemId}}/ledger/{{entryId}}/reversal
+Content-Type: application/json
+
+{
+  "version": "{{version}}"
+}
+
+### Reversing a missing entry returns 404
+POST {{baseUrl}}/api/savings-items/{{itemId}}/ledger/00000000-0000-0000-0000-000000000000/reversal
 Content-Type: application/json
 
 {

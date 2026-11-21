@@ -23,6 +23,15 @@ public static class Display
         AccountType.InvestmentAccount => "Investment Account",
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
+    public static string LedgerEntryName(LedgerEntryType type) => type switch
+    {
+        LedgerEntryType.OpeningFunding => "Opening funding",
+        LedgerEntryType.AllocationPayment => "Allocation payment",
+        LedgerEntryType.FundingAdjustment => "Funding adjustment",
+        LedgerEntryType.Drawdown => "Drawdown",
+        LedgerEntryType.Reversal => "Reversal",
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
     public static string ContributionName(ContributionState status) => status switch
     {
         ContributionState.Funded => "Fully allocated",

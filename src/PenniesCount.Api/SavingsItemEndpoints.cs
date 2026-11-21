@@ -12,7 +12,7 @@ internal static class SavingsItemEndpoints
         routes.MapGet("/", async (bool? removed, SavingsDbContext db, TimeProvider clock, CancellationToken ct) =>
         {
             var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
-            var items = await db.SavingsItems.AsNoTracking().Include(x => x.Drawdowns)
+            var items = await db.SavingsItems.AsNoTracking().Include(x => x.Entries)
                 .Where(x => x.IsRemoved == (removed ?? false)).ToListAsync(ct);
             return new SavingsItemsResponse(asOf, items.Select(x => x.ToResponse(asOf))
                 .OrderBy(x => x.Type).ThenBy(x => x.TargetDate).ThenBy(x => x.Name).ThenBy(x => x.Id).ToArray());
@@ -20,7 +20,7 @@ internal static class SavingsItemEndpoints
         routes.MapGet("/{id:guid}", async Task<IResult> (Guid id, SavingsDbContext db, TimeProvider clock, CancellationToken ct) =>
         {
             var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
-            var item = await db.SavingsItems.AsNoTracking().Include(x => x.Drawdowns).SingleOrDefaultAsync(x => x.Id == id, ct);
+            var item = await db.SavingsItems.AsNoTracking().Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             return item is null ? Results.NotFound() : Results.Ok(item.ToResponse(asOf));
         });
         routes.MapPost("/", async Task<IResult> (CreateSavingsItemRequest request, SavingsDbContext db,
@@ -32,8 +32,11 @@ internal static class SavingsItemEndpoints
             var item = new SavingsItem
             {
                 Name = request.Name.Trim(), TargetAmount = request.TargetAmount,
-                AllocatedAmount = request.AllocatedAmount, StartDate = request.StartDate, TargetDate = request.TargetDate
+                StartDate = request.StartDate, TargetDate = request.TargetDate
             };
+            if (request.AllocatedAmount > 0)
+                item.Record(LedgerEntryType.OpeningFunding, request.AllocatedAmount, asOf,
+                    "Initial allocation", clock.GetUtcNow());
             db.SavingsItems.Add(item);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/savings-items/{item.Id}", item.ToResponse(asOf));
@@ -45,12 +48,12 @@ internal static class SavingsItemEndpoints
             var logger = logs.CreateLogger("SavingsItems");
             var error = ApiValidation.Check(request, logger);
             if (error is not null) return error;
-            var item = await db.SavingsItems.Include(x => x.Drawdowns).SingleOrDefaultAsync(x => x.Id == id, ct);
+            var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (item is null) return Results.NotFound();
             if (Convert.ToBase64String(item.Version) != request.Version)
                 return ApiValidation.Conflict(logger);
             if (item.IsRemoved) return SavingsDrawdownEndpoints.Removed(logger);
-            if (request.AllocatedAmount > item.TargetAmount || request.AllocatedAmount < item.Drawdowns.Sum(x => x.Amount))
+            if (request.AllocatedAmount > item.TargetAmount || request.AllocatedAmount < item.DrawnDownAmount)
             {
                 logger.LogWarning("Item allocation validation failed.");
                 return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -58,17 +61,10 @@ internal static class SavingsItemEndpoints
                     [nameof(request.AllocatedAmount)] = ["Total funding must cover recorded drawdowns and cannot exceed the target."]
                 });
             }
-            item.AllocatedAmount = request.AllocatedAmount;
-            db.Entry(item).Property(x => x.AllocatedAmount).IsModified = true;
-            try
-            {
-                await db.SaveChangesAsync(ct);
-                return Results.Ok(item.ToResponse(asOf));
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                return ApiValidation.Conflict(logger);
-            }
+            var adjustment = request.AllocatedAmount - item.FundedAmount;
+            if (adjustment != 0)
+                item.Record(LedgerEntryType.FundingAdjustment, adjustment, asOf, "Total funding updated", clock.GetUtcNow());
+            return await SavingsDrawdownEndpoints.SaveItemAsync(db, item, logger, ct) ?? Results.Ok(item.ToResponse(asOf));
         });
     }
 }

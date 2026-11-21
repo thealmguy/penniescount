@@ -13,22 +13,17 @@ public sealed class BudgetClient(HttpClient http)
     public Task<SavingsItemsResponse> GetItemsAsync() => SendAsync<SavingsItemsResponse>(HttpMethod.Get, "api/savings-items");
     public Task<SavingsItemsResponse> GetRemovedItemsAsync() =>
         SendAsync<SavingsItemsResponse>(HttpMethod.Get, "api/savings-items?removed=true");
-    public Task<SavingsDrawdownHistoryResponse> GetDrawdownsAsync(Guid id) =>
-        SendAsync<SavingsDrawdownHistoryResponse>(HttpMethod.Get, $"api/savings-items/{id}/drawdowns");
+    public Task<SavingsLedgerResponse> GetLedgerAsync(Guid id) =>
+        SendAsync<SavingsLedgerResponse>(HttpMethod.Get, $"api/savings-items/{id}/ledger");
+    public Task<LedgerEntryResponse> RecordPaymentAsync(Guid id, RecordPaymentRequest request) =>
+        SendAsync<LedgerEntryResponse>(HttpMethod.Post, $"api/savings-items/{id}/payments", request);
+    public Task<LedgerEntryResponse> ReverseEntryAsync(Guid id, Guid entryId, ItemVersionRequest request) =>
+        SendAsync<LedgerEntryResponse>(HttpMethod.Post, $"api/savings-items/{id}/ledger/{entryId}/reversal", request);
     public Task<SavingsDrawdownResponse> SaveDrawdownAsync(Guid id, Guid? drawdownId, SaveDrawdownRequest request) =>
         SendAsync<SavingsDrawdownResponse>(drawdownId.HasValue ? HttpMethod.Put : HttpMethod.Post,
             $"api/savings-items/{id}/drawdowns" + (drawdownId.HasValue ? $"/{drawdownId}" : ""), request);
     public Task<SavingsItemResponse> RemoveItemAsync(Guid id, ItemVersionRequest request) =>
         SendAsync<SavingsItemResponse>(HttpMethod.Put, $"api/savings-items/{id}/removal", request);
-    public async Task DeleteDrawdownAsync(Guid id, Guid drawdownId, ItemVersionRequest body)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/savings-items/{id}/drawdowns/{drawdownId}")
-        {
-            Content = JsonContent.Create(body)
-        };
-        using var response = await http.SendAsync(request);
-        await CheckResponseAsync(response);
-    }
     public Task<DashboardResponse> GetDashboardAsync() => SendAsync<DashboardResponse>(HttpMethod.Get, "api/dashboard");
     public Task<SavingsItemResponse> CreateItemAsync(CreateSavingsItemRequest request) =>
         SendAsync<SavingsItemResponse>(HttpMethod.Post, "api/savings-items", request);

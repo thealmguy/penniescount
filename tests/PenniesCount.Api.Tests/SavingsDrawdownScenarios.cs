@@ -69,10 +69,16 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, excessiveCorrection.StatusCode);
         using var fullCorrection = await client.PutAsJsonAsync(path, Payload(item, 6000m));
         fullCorrection.EnsureSuccessStatusCode();
+        var original = path;
+        path = Replacement(path, (await fullCorrection.Content.ReadFromJsonAsync<SavingsDrawdownResponse>())!);
         item = await Item(client, item);
         Assert.Equal(0m, item.GetProperty("availableAmount").GetDecimal());
+        using var reused = await client.PutAsJsonAsync(original, Payload(item, 1m));
+        Assert.Equal(HttpStatusCode.Conflict, reused.StatusCode);
+        Assert.Contains("already been reversed", await reused.Content.ReadAsStringAsync());
         using var correction = await client.PutAsJsonAsync(path, Payload(item, 2000m));
         Assert.Equal(HttpStatusCode.OK, correction.StatusCode);
+        path = Replacement(path, (await correction.Content.ReadFromJsonAsync<SavingsDrawdownResponse>())!);
         item = await Item(client, item);
         Assert.Equal(4000m, item.GetProperty("availableAmount").GetDecimal());
         var dashboard = (await client.GetFromJsonAsync<DashboardResponse>("/api/dashboard"))!;
@@ -93,6 +99,28 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
         Assert.Equal(6000m, item.GetProperty("allocatedAmount").GetDecimal());
         Assert.Equal(6000m, item.GetProperty("availableAmount").GetDecimal());
         Assert.Equal(0m, item.GetProperty("drawnDownAmount").GetDecimal());
+        var reversed = (await client.GetFromJsonAsync<SavingsDrawdownResponse>(path))!;
+        Assert.True(reversed.IsReversed);
+        using var deleteAgain = new HttpRequestMessage(HttpMethod.Delete, path)
+        {
+            Content = JsonContent.Create(new { version = Version(item) })
+        };
+        using var deletedAgain = await client.SendAsync(deleteAgain);
+        Assert.Equal(HttpStatusCode.Conflict, deletedAgain.StatusCode);
+        var history = (await client.GetFromJsonAsync<SavingsDrawdownHistoryResponse>(
+            $"/api/savings-items/{Id(item)}/drawdowns"))!;
+        Assert.Empty(history.Drawdowns);
+        var ledger = (await client.GetFromJsonAsync<SavingsLedgerResponse>($"/api/savings-items/{Id(item)}/ledger"))!;
+        Assert.Equal(7, ledger.Entries.Length);
+        Assert.Equal(3, ledger.Entries.Count(x => x.Type == LedgerEntryType.Reversal));
+        Assert.Equal(3, ledger.Entries.Count(x => x.Type == LedgerEntryType.Drawdown && x.IsReversed));
+    }
+
+    private static Uri Replacement(Uri path, SavingsDrawdownResponse replacement)
+    {
+        Assert.Equal(Guid.Parse(path.OriginalString[^36..]), replacement.ReplacesDrawdownId);
+        Assert.False(replacement.IsReversed);
+        return new Uri(path.OriginalString[..^36] + replacement.Id, UriKind.RelativeOrAbsolute);
     }
 
     [Fact]
@@ -259,7 +287,7 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Given_history_with_tied_dates_When_read_or_corrected_Then_ordering_and_original_recording_times_are_preserved()
+    public async Task Given_history_with_tied_dates_When_read_or_corrected_Then_ordering_is_stable_and_corrections_append_a_replacement()
     {
         var clock = new HistoryClock();
         await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
@@ -280,13 +308,13 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
             var db = scope.ServiceProvider.GetRequiredService<SavingsDbContext>();
             foreach (var id in new[] { "00000000-0000-0000-0000-000000000002", "00000001-0000-0000-0000-000000000001" })
             {
-                var tied = new SavingsItemDrawdown
+                var tied = new SavingsLedgerEntry
                 {
-                    Id = Guid.Parse(id), SavingsItemId = Id(item), Amount = 1m, SpentOn = new(2026, 1, 1),
-                    Description = "Flights", RecordedAtUtc = clock.GetUtcNow()
+                    Id = Guid.Parse(id), SavingsItemId = Id(item), Type = LedgerEntryType.Drawdown, Amount = 1m,
+                    EffectiveDate = new(2026, 1, 1), Description = "Flights", RecordedAtUtc = clock.GetUtcNow()
                 };
-                db.Drawdowns.Add(tied);
-                records.Add(tied.ToResponse());
+                db.LedgerEntries.Add(tied);
+                records.Add(tied.ToDrawdownResponse(false));
             }
             await db.SaveChangesAsync();
         }
@@ -299,7 +327,21 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
             $"/api/savings-items/{Id(item)}/drawdowns/{records[0].Id}", Payload(item, 2m));
         updated.EnsureSuccessStatusCode();
         var corrected = (await updated.Content.ReadFromJsonAsync<SavingsDrawdownResponse>())!;
-        Assert.Equal(records[0] with { Amount = 2m }, corrected);
+        Assert.NotEqual(records[0].Id, corrected.Id);
+        Assert.Equal(records[0] with { Id = corrected.Id, Amount = 2m, RecordedAtUtc = clock.GetUtcNow(),
+            ReplacesDrawdownId = records[0].Id }, corrected);
+        var original = (await client.GetFromJsonAsync<SavingsDrawdownResponse>(
+            $"/api/savings-items/{Id(item)}/drawdowns/{records[0].Id}"))!;
+        Assert.Equal(records[0] with { IsReversed = true }, original);
+        history = (await client.GetFromJsonAsync<SavingsDrawdownHistoryResponse>(
+            $"/api/savings-items/{Id(item)}/drawdowns"))!;
+        Assert.Equal(records.Skip(1).OrderBy(x => x.Id).Select(x => x.Id).Append(corrected.Id),
+            history.Drawdowns.Select(x => x.Id));
+        var ledger = (await client.GetFromJsonAsync<SavingsLedgerResponse>($"/api/savings-items/{Id(item)}/ledger"))!;
+        var reversal = ledger.Entries.Single(x => x.Type == LedgerEntryType.Reversal);
+        Assert.Equal(new LedgerEntryResponse(reversal.Id, LedgerEntryType.Reversal, 1m, records[0].SpentOn, null,
+            clock.GetUtcNow(), false, records[0].Id, null, false), reversal);
+        Assert.Equal(4m, history.Item.DrawnDownAmount);
     }
 
     [Theory]
@@ -380,15 +422,65 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
             VALUES ({id}, {"Existing example"}, {10000m}, {6000m}, {start}, {deadline})
             """);
         await migrator.MigrateAsync();
-        var item = await db.SavingsItems.AsNoTracking().Include(x => x.Drawdowns).SingleAsync();
+        var item = await db.SavingsItems.AsNoTracking().Include(x => x.Entries).SingleAsync();
         Assert.Equal(id, item.Id);
         Assert.Equal(10000m, item.TargetAmount);
         Assert.Equal(6000m, item.AllocatedAmount);
         Assert.Equal(start, item.StartDate);
         Assert.Equal(deadline, item.TargetDate);
         Assert.False(item.IsRemoved);
-        Assert.Empty(item.Drawdowns);
+        var opening = Assert.Single(item.Entries);
+        Assert.Equal((LedgerEntryType.OpeningFunding, 6000m, start, true),
+            (opening.Type, opening.Amount, opening.EffectiveDate, opening.IsInferred));
         Assert.False(db.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public async Task Given_drawdown_data_When_migrating_to_the_ledger_and_back_Then_funding_and_drawdowns_are_preserved()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SavingsDbContext>();
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("20261121102101_SavingsDrawdowns");
+        var funded = Guid.NewGuid();
+        var unfunded = Guid.NewGuid();
+        var drawdown = Guid.NewGuid();
+        var start = new DateOnly(2026, 1, 1);
+        var spentOn = new DateOnly(2026, 3, 4);
+        var recorded = new DateTimeOffset(2026, 3, 5, 9, 30, 0, TimeSpan.Zero);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO SavingsItems (Id, Name, TargetAmount, AllocatedAmount, StartDate, TargetDate, IsRemoved)
+            VALUES ({funded}, {"Funded"}, {10000m}, {6000m}, {start}, {new DateOnly(2027, 4, 1)}, {true}),
+                   ({unfunded}, {"Unfunded"}, {500m}, {0m}, {start}, {new DateOnly(2027, 4, 1)}, {false});
+            INSERT INTO Drawdowns (Id, SavingsItemId, Amount, SpentOn, Description, RecordedAtUtc)
+            VALUES ({drawdown}, {funded}, {1500m}, {spentOn}, {"Flights"}, {recorded});
+            """);
+        var versions = await db.SavingsItems.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Version);
+        await migrator.MigrateAsync();
+        var items = await db.SavingsItems.AsNoTracking().Include(x => x.Entries).ToDictionaryAsync(x => x.Id);
+        Assert.Empty(items[unfunded].Entries);
+        var item = items[funded];
+        Assert.Equal(versions[funded], item.Version);
+        Assert.Equal(item.AllocatedAmount, item.FundedAmount);
+        Assert.Equal(1500m, item.DrawnDownAmount);
+        var spent = item.Entries.Single(x => x.Type == LedgerEntryType.Drawdown);
+        Assert.Equal((drawdown, 1500m, spentOn, "Flights", recorded, false),
+            (spent.Id, spent.Amount, spent.EffectiveDate, spent.Description, spent.RecordedAtUtc, spent.IsInferred));
+        var opening = item.Entries.Single(x => x.Type == LedgerEntryType.OpeningFunding);
+        Assert.Equal((6000m, start, true, "Opening balance inferred from existing total funding"),
+            (opening.Amount, opening.EffectiveDate, opening.IsInferred, opening.Description));
+        Assert.Equal(2, item.Entries.Count);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO LedgerEntries (Id, SavingsItemId, Type, Amount, EffectiveDate, RecordedAtUtc, IsInferred)
+            VALUES ({Guid.NewGuid()}, {funded}, {3}, {100m}, {spentOn}, {recorded}, {false});
+            INSERT INTO LedgerEntries (Id, SavingsItemId, Type, Amount, EffectiveDate, RecordedAtUtc, IsInferred, ReversesEntryId)
+            SELECT {Guid.NewGuid()}, {funded}, {4}, {100m}, {spentOn}, {recorded}, {false}, Id
+            FROM LedgerEntries WHERE Amount = {100m};
+            """);
+        await migrator.MigrateAsync("20261121102101_SavingsDrawdowns");
+        var restored = await db.Database.SqlQuery<Guid>($"SELECT Id AS Value FROM Drawdowns").ToListAsync();
+        Assert.Equal([drawdown], restored);
+        await migrator.MigrateAsync();
     }
 
     private sealed class FixedClock(DateOnly today) : TimeProvider

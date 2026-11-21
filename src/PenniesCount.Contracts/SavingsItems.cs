@@ -68,7 +68,28 @@ public sealed class SaveDrawdownRequest
 }
 
 public sealed record SavingsDrawdownResponse(Guid Id, decimal Amount, DateOnly SpentOn,
-    string? Description, DateTimeOffset RecordedAtUtc);
+    string? Description, DateTimeOffset RecordedAtUtc)
+{
+    public Guid? ReplacesDrawdownId { get; init; }
+    public bool IsReversed { get; init; }
+}
 
 public sealed record SavingsDrawdownHistoryResponse(DateOnly AsOfDate, SavingsItemResponse Item,
     SavingsDrawdownResponse[] Drawdowns);
+
+public enum LedgerEntryType { OpeningFunding, AllocationPayment, FundingAdjustment, Drawdown, Reversal }
+
+public sealed class RecordPaymentRequest
+{
+    [Money(positive: true)]
+    public decimal Amount { get; set; }
+    public DateOnly PaidOn { get; set; }
+    [Required, RegularExpression("^[A-Za-z0-9+/]{11}=$")]
+    public string Version { get; set; } = "";
+}
+
+public sealed record LedgerEntryResponse(Guid Id, LedgerEntryType Type, decimal Amount, DateOnly EffectiveDate,
+    string? Description, DateTimeOffset RecordedAtUtc, bool IsInferred, Guid? ReversesEntryId,
+    Guid? ReplacesEntryId, bool IsReversed);
+
+public sealed record SavingsLedgerResponse(DateOnly AsOfDate, SavingsItemResponse Item, LedgerEntryResponse[] Entries);

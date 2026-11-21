@@ -1,0 +1,19 @@
+{
+  "stryker-config": {
+    "project": "PenniesCount.Api.csproj",
+    "mutate": [
+      "**/SavingsDrawdownEndpoints.cs",
+      "**/SavingsLedgerEndpoints.cs",
+      "**/Data/SavingsItem.cs{656..2276}",
+      "**/Data/SavingsLedgerEntry.cs{591..1293}",
+      "**/SavingsItemEndpoints.cs{513..680}{1118..1246}{1995..2196}{3242..4077}",
+      "**/DashboardEndpoints.cs{750..985}{2307..2371}"
+    ],
+    "test-case-filter": "FullyQualifiedName~SavingsDrawdownScenarios|FullyQualifiedName~SavingsLedgerScenarios|(FullyQualifiedName~SavingsItemScenarios&FullyQualifiedName!~SavingsCategoryScenarios)|FullyQualifiedName~DashboardScenarios",
+    "mutation-level": "Complete",
+    "concurrency": 4,
+    "ignore-methods": [ "*LogWarning", "*CreateLogger" ],
+    "reporters": [ "dots", "cleartext", "html", "json" ],
+    "thresholds": { "high": 100, "low": 100, "break": 100 }
+  }
+}

@@ -2,18 +2,18 @@
 @rendermode InteractiveServer
 @inherits ApiPageBase
 
-<PageTitle>Savings item drawdowns</PageTitle>
-<h1>Savings item drawdowns</h1>
+<PageTitle>Savings item history</PageTitle>
+<h1>Savings item history</h1>
 <a href="/">Back to budget</a>
-<button class="btn btn-outline-secondary ms-2" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="LoadAsync">Refresh item</button>
+<button class="btn btn-outline-secondary ms-2" disabled="@(Locked)" @onclick="LoadAsync">Refresh item</button>
 @if (Error is not null)
 {
     <div class="alert alert-danger mt-3" role="alert">@Error</div>
     <p>Displayed figures are from the last successful refresh. If the item changed, cancel the edit and refresh before retrying.</p>
 }
-@if (_history is not null)
+@if (_ledger is not null)
 {
-    var item = _history.Item;
+    var item = _ledger.Item;
     <h2>@item.Name</h2>
     @if (item.IsRemoved)
     {
@@ -25,15 +25,38 @@
         <dt>Drawn down</dt><dd id="item-drawn">@Display.Money(item.DrawnDownAmount)</dd>
         <dt>Available to spend</dt><dd id="item-available">@Display.Money(item.AvailableAmount)</dd>
     </dl>
-    <p>Drawdowns record spending only. They do not move money or change account totals. Update account balances manually when you move the money.</p>
+    <p>This item works like a sub-account: every allocation payment, drawdown and correction is kept in its history.
+        Entries are never edited or deleted; mistakes are reversed with an offsetting entry.
+        Payments and drawdowns do not move money or change account totals. Update account balances manually when you move the money.</p>
     @if (!item.IsRemoved)
     {
-        <button id="add-drawdown" class="btn btn-primary" disabled="@(Busy || _form is not null || _confirmation is not null || item.AvailableAmount == 0)" @onclick="() => Edit(null)">Record drawdown</button>
-        <button id="remove-item" class="btn btn-outline-danger" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="ConfirmRemoval">Mark removed</button>
+        <button id="add-payment" class="btn btn-primary" disabled="@(Locked || item.AllocatedAmount >= item.TargetAmount)" @onclick="StartPayment">Record allocation payment</button>
+        <button id="add-drawdown" class="btn btn-primary" disabled="@(Locked || item.AvailableAmount == 0)" @onclick="() => Edit(null)">Record drawdown</button>
+        <button id="remove-item" class="btn btn-outline-danger" disabled="@(Locked)" @onclick="ConfirmRemoval">Mark removed</button>
+    }
+    @if (_payment is not null)
+    {
+        <h3>Record allocation payment</h3>
+        <EditForm Model="_payment" OnValidSubmit="SavePaymentAsync" FormName="payment">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@Busy">
+                <label for="payment-amount">Amount (GBP)</label>
+                <InputNumber id="payment-amount" class="form-control" @bind-Value="_payment.Amount" step="0.01" />
+                <label for="paid-on">Payment date</label>
+                <InputDate id="paid-on" class="form-control" @bind-Value="_payment.PaidOn" />
+                <button type="submit" class="btn btn-primary mt-2">Save payment</button>
+                <button type="button" class="btn btn-secondary mt-2" @onclick="Cancel">Cancel</button>
+            </fieldset>
+        </EditForm>
     }
     @if (_form is not null)
     {
         <h3>@(_editingId.HasValue ? "Correct drawdown" : "Record drawdown")</h3>
+        @if (_editingId.HasValue)
+        {
+            <p>Saving a correction reverses the original drawdown and records this replacement.</p>
+        }
         <EditForm Model="_form" OnValidSubmit="SaveAsync" FormName="drawdown">
             <DataAnnotationsValidator />
             <ValidationSummary />
@@ -54,32 +77,40 @@
         <section class="alert alert-warning mt-3" aria-label="Confirm action">
             <p>@(_confirmation == "remove"
                 ? "Mark this item removed? It will leave all budget sums, with its history retained read-only. This cannot be undone and does not record spending or update accounts."
-                : "Delete this drawdown? Its amount will become available again; account balances and total funding will not change.")</p>
+                : "Reverse this entry? An offsetting reversal will be added to the history and the original stays visible. Account balances will not change.")</p>
             <button id="confirm-action" class="btn btn-danger" disabled="@Busy" @onclick="ConfirmAsync">Confirm</button>
             <button class="btn btn-secondary" disabled="@Busy" @onclick="Cancel">Cancel</button>
         </section>
     }
-    <h3>Drawdown history</h3>
-    @if (_history.Drawdowns.Length == 0)
+    <h3>History</h3>
+    @if (_ledger.Entries.Length == 0)
     {
-        <p>No drawdowns recorded.</p>
+        <p>No entries recorded.</p>
     }
     else
     {
         <div class="table-responsive">
             <table class="table">
-                <thead><tr><th>Date</th><th>Amount</th><th>Description</th><th>Recorded (UTC)</th>@if (!item.IsRemoved) { <th>Actions</th> }</tr></thead>
+                <thead><tr><th>Date</th><th>Entry</th><th>Amount</th><th>Description</th><th>Recorded (UTC)</th><th>Status</th>@if (!item.IsRemoved) { <th>Actions</th> }</tr></thead>
                 <tbody>
-                    @foreach (var record in _history.Drawdowns)
+                    @foreach (var entry in _ledger.Entries)
                     {
-                        <tr @key="record.Id">
-                            <td>@record.SpentOn.ToString("dd MMM yyyy")</td><td>@Display.Money(record.Amount)</td>
-                            <td>@record.Description</td><td>@record.RecordedAtUtc.ToString("dd MMM yyyy HH:mm:ss")</td>
+                        <tr @key="entry.Id" class="ledger-entry">
+                            <td>@entry.EffectiveDate.ToString("dd MMM yyyy")</td><td>@Display.LedgerEntryName(entry.Type)</td>
+                            <td>@Display.Money(entry.Amount)</td><td>@entry.Description</td>
+                            <td>@entry.RecordedAtUtc.ToString("dd MMM yyyy HH:mm:ss")</td>
+                            <td>@Status(entry)</td>
                             @if (!item.IsRemoved)
                             {
                                 <td>
-                                    <button class="btn btn-sm btn-outline-primary edit-drawdown" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="() => Edit(record)">Correct</button>
-                                    <button class="btn btn-sm btn-outline-danger delete-drawdown" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="() => ConfirmDeletion(record.Id)">Delete</button>
+                                    @if (entry.Type == LedgerEntryType.Drawdown && !entry.IsReversed)
+                                    {
+                                        <button class="btn btn-sm btn-outline-primary edit-drawdown" disabled="@(Locked)" @onclick="() => Edit(entry)">Correct</button>
+                                    }
+                                    @if (entry.Type != LedgerEntryType.Reversal && !entry.IsReversed)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger reverse-entry" disabled="@(Locked)" @onclick="() => ConfirmReversal(entry.Id)">Reverse</button>
+                                    }
                                 </td>
                             }
                         </tr>
@@ -96,25 +127,43 @@ else
 
 @code {
     [Parameter] public Guid Id { get; set; }
-    private SavingsDrawdownHistoryResponse? _history;
+    private SavingsLedgerResponse? _ledger;
     private SaveDrawdownRequest? _form;
+    private RecordPaymentRequest? _payment;
     private Guid? _editingId;
     private string? _confirmation;
-    private Guid _deletingId;
+    private Guid _reversingId;
+
+    private bool Locked => Busy || _form is not null || _payment is not null || _confirmation is not null;
 
     protected override Task OnParametersSetAsync() => LoadAsync();
-    private async Task LoadAsync() => await PerformAsync(async () => _history = await Api.GetDrawdownsAsync(Id));
+    private async Task LoadAsync() => await PerformAsync(async () => _ledger = await Api.GetLedgerAsync(Id));
 
-    private void Edit(SavingsDrawdownResponse? record)
+    private static string Status(LedgerEntryResponse entry) => string.Join("; ", new[]
     {
-        if (_history is null || Busy) return;
+        entry.IsReversed ? "Reversed" : null,
+        entry.ReversesEntryId.HasValue ? "Reverses an earlier entry" : null,
+        entry.ReplacesEntryId.HasValue ? "Correction" : null,
+        entry.IsInferred ? "Inferred from earlier totals" : null
+    }.Where(x => x is not null));
+
+    private void StartPayment()
+    {
+        if (_ledger is null || Busy) return;
+        ClearError();
+        _payment = new() { PaidOn = _ledger.AsOfDate, Version = _ledger.Item.Version };
+    }
+
+    private void Edit(LedgerEntryResponse? record)
+    {
+        if (_ledger is null || Busy) return;
         ClearError();
         _editingId = record?.Id;
         _form = new()
         {
-            Amount = record?.Amount ?? _history.Item.AvailableAmount,
-            SpentOn = record?.SpentOn ?? _history.AsOfDate, Description = record?.Description,
-            Version = _history.Item.Version
+            Amount = record?.Amount ?? _ledger.Item.AvailableAmount,
+            SpentOn = record?.EffectiveDate ?? _ledger.AsOfDate, Description = record?.Description,
+            Version = _ledger.Item.Version
         };
     }
 
@@ -122,6 +171,7 @@ else
     {
         if (Busy) return;
         _form = null;
+        _payment = null;
         _confirmation = null;
         ClearError();
     }
@@ -132,11 +182,21 @@ else
         _confirmation = "remove";
     }
 
-    private void ConfirmDeletion(Guid id)
+    private void ConfirmReversal(Guid id)
     {
         ClearError();
-        _deletingId = id;
-        _confirmation = "delete";
+        _reversingId = id;
+        _confirmation = "reverse";
+    }
+
+    private async Task SavePaymentAsync()
+    {
+        if (_payment is null) return;
+        if (await PerformAsync(async () => await Api.RecordPaymentAsync(Id, _payment)))
+        {
+            _payment = null;
+            await LoadAsync();
+        }
     }
 
     private async Task SaveAsync()
@@ -151,12 +211,12 @@ else
 
     private async Task ConfirmAsync()
     {
-        if (_history is null || _confirmation is null) return;
-        var request = new ItemVersionRequest { Version = _history.Item.Version };
+        if (_ledger is null || _confirmation is null) return;
+        var request = new ItemVersionRequest { Version = _ledger.Item.Version };
         if (await PerformAsync(async () =>
         {
             if (_confirmation == "remove") await Api.RemoveItemAsync(Id, request);
-            else await Api.DeleteDrawdownAsync(Id, _deletingId, request);
+            else await Api.ReverseEntryAsync(Id, _reversingId, request);
         }))
         {
             _confirmation = null;

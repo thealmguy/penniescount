@@ -1,3 +1,4 @@
+using System.Data.SqlTypes;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -37,6 +38,14 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
             StartDate = new(2027, 1, 1), TargetDate = new(2027, 1, 31)
         });
         urgent.EnsureSuccessStatusCode();
+        foreach (var name in new[] { "Tied B", "Tied A", "Tied A" })
+        {
+            using var tied = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
+            {
+                Name = name, TargetAmount = 100m, StartDate = new(2027, 2, 1), TargetDate = new(2027, 3, 1)
+            });
+            tied.EnsureSuccessStatusCode();
+        }
 
         var dashboard = (await client.GetFromJsonAsync<DashboardResponse>("/api/dashboard"))!;
         Assert.Equal(new DateOnly(2027, 1, 15), dashboard.AsOfDate);
@@ -48,7 +57,10 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         Assert.Equal(ContributionState.NotStarted, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Future example").Status);
         Assert.Equal(dashboard.RequiredMonthlySavings, dashboard.Groups.SelectMany(x => x.Items).Sum(x => x.RequiredContribution));
         Assert.All(dashboard.Groups, group => Assert.Equal(
-            group.Items.OrderBy(x => x.Item.TargetDate).ThenBy(x => x.Item.Name).ThenBy(x => x.Item.Id), group.Items));
+            group.Items.OrderBy(x => x.Item.TargetDate).ThenBy(x => x.Item.Name).ThenBy(x => new SqlGuid(x.Item.Id)),
+            group.Items));
+        Assert.Equal(["Tied A", "Tied A", "Tied B"], dashboard.Groups.SelectMany(x => x.Items)
+            .Select(x => x.Item.Name).Where(x => x.StartsWith("Tied", StringComparison.Ordinal)));
 
         using var funds = await client.PutAsJsonAsync($"/api/accounts/{account.Id}/balance",
             new UpdateBalanceRequest { TotalFunds = 0m, Version = account.Version });

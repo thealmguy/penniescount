@@ -15,7 +15,7 @@ internal static class DashboardEndpoints
             var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
             var balances = await db.Accounts.AsNoTracking().Select(x => x.TotalFunds).ToListAsync(ct);
-            var storedItems = await db.SavingsItems.AsNoTracking().Include(x => x.Drawdowns)
+            var storedItems = await db.SavingsItems.AsNoTracking().Include(x => x.Entries)
                 .Where(x => !x.IsRemoved).OrderBy(x => x.TargetDate)
                 .ThenBy(x => x.Name).ThenBy(x => x.Id).ToListAsync(ct);
             await transaction.CommitAsync(ct);

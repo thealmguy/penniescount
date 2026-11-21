@@ -135,10 +135,9 @@ namespace PenniesCount.Api.Migrations
                         });
                 });
 
-            modelBuilder.Entity("PenniesCount.Api.Data.SavingsItemDrawdown", b =>
+            modelBuilder.Entity("PenniesCount.Api.Data.SavingsLedgerEntry", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<decimal>("Amount")
@@ -149,22 +148,46 @@ namespace PenniesCount.Api.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<DateOnly>("EffectiveDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsInferred")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ReplacesEntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReversesEntryId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("SavingsItemId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateOnly>("SpentOn")
-                        .HasColumnType("date");
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SavingsItemId", "SpentOn", "RecordedAtUtc", "Id");
+                    b.HasIndex("ReplacesEntryId");
 
-                    b.ToTable("Drawdowns", null, t =>
+                    b.HasIndex("ReversesEntryId")
+                        .IsUnique()
+                        .HasFilter("[ReversesEntryId] IS NOT NULL");
+
+                    b.HasIndex("SavingsItemId", "EffectiveDate", "RecordedAtUtc", "Id");
+
+                    b.ToTable("LedgerEntries", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Drawdowns_Amount", "[Amount] > 0");
+                            t.HasCheckConstraint("CK_Ledger_Amount", "([Type] IN (2, 4) AND [Amount] <> 0) OR ([Type] NOT IN (2, 4) AND [Amount] > 0)");
+
+                            t.HasCheckConstraint("CK_Ledger_Replacement", "[ReplacesEntryId] IS NULL OR [Type] = 3");
+
+                            t.HasCheckConstraint("CK_Ledger_Reversal", "([Type] = 4 AND [ReversesEntryId] IS NOT NULL) OR ([Type] <> 4 AND [ReversesEntryId] IS NULL)");
+
+                            t.HasCheckConstraint("CK_Ledger_Type", "[Type] BETWEEN 0 AND 4");
                         });
                 });
 
@@ -177,10 +200,20 @@ namespace PenniesCount.Api.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("PenniesCount.Api.Data.SavingsItemDrawdown", b =>
+            modelBuilder.Entity("PenniesCount.Api.Data.SavingsLedgerEntry", b =>
                 {
+                    b.HasOne("PenniesCount.Api.Data.SavingsLedgerEntry", null)
+                        .WithMany()
+                        .HasForeignKey("ReplacesEntryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PenniesCount.Api.Data.SavingsLedgerEntry", null)
+                        .WithMany()
+                        .HasForeignKey("ReversesEntryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PenniesCount.Api.Data.SavingsItem", null)
-                        .WithMany("Drawdowns")
+                        .WithMany("Entries")
                         .HasForeignKey("SavingsItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -193,7 +226,7 @@ namespace PenniesCount.Api.Migrations
 
             modelBuilder.Entity("PenniesCount.Api.Data.SavingsItem", b =>
                 {
-                    b.Navigation("Drawdowns");
+                    b.Navigation("Entries");
                 });
 #pragma warning restore 612, 618
         }

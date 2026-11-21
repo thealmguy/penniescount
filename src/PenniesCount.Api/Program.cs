@@ -21,6 +21,7 @@ app.MapGet("/api/health", () => new HealthResponse("Ready"));
 app.MapAccounts();
 app.MapSavingsItems();
 app.MapSavingsDrawdowns();
+app.MapSavingsLedger();
 app.MapDashboard();
 
 app.Run();
