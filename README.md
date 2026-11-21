@@ -197,7 +197,7 @@ reapplying a migration.
 - Active items spread their unallocated remainder across the first working day
   of each month, on/after today and on/before their inclusive deadline. A working
   day excludes weekends and England-and-Wales public holidays from the official
-  GOV.UK feed.
+  GOV.UK feed where coverage is available.
 - Today's allocation is counted unless an effective allocation payment for that
   item is recorded for today. Opening funding, funding adjustments and drawdowns
   do not count as an allocation payment.
@@ -213,10 +213,9 @@ reapplying a migration.
   of dates or funding state. Drawdowns do not create a new funding requirement.
 - Each recommendation rounds upward to the nearest penny. The overview sums
   those displayed recommendations. Recommendations never change allocations.
-- If an item's required allocation dates extend beyond known GOV.UK coverage,
-  its contribution and the overall monthly total are unavailable rather than
-  guessed or partially summed. The dashboard continues to show balances, items
-  and independently calculable statuses.
+- For each month without enough holiday coverage, use its first Monday–Friday.
+  The next allocation date, item contributions and overall monthly total remain
+  available. Estimates may change when holiday data for those months becomes available.
 
 The API uses one host-local calendar date per dashboard or savings-item request
 for all derived categories and calculations. History
@@ -235,8 +234,8 @@ retries after failures no more often than every 15 minutes, and reports stale or
 unavailable holiday data in the dashboard.
 
 `IContributionSchedule` in Core is the replacement seam for payment-date rules;
-`WorkingDaySchedule` applies the covered holiday set and reports unknown dates
-as unavailable.
+`WorkingDaySchedule` uses covered holiday dates, including cached dates, and
+falls back to weekdays alone when the holiday calendar cannot determine a month's date.
 
 ## API contract
 
@@ -295,8 +294,8 @@ and an optional `warning`. Groups always
 include Short, Medium, Long and Past in that order. Each group has `type` and `items`;
 each row includes the item record, `remainingAmount`, `requiredContribution`,
 `remainingPayments`, `paidToday` and `status`. The contribution and payment count
-are nullable when holiday coverage is insufficient; monthly savings is null if
-any item is unavailable. Status values: `0` Fully allocated, `1` Not started,
+remain nullable in the contract, but missing holiday coverage uses weekday
+estimates instead of nulls. Status values: `0` Fully allocated, `1` Not started,
 `2` Monthly, `3` Needed now, `4` Unavailable. Items sort by deadline, name and ID within each group; the
 savings-item list sorts first by derived category, then deadline, name and ID.
 

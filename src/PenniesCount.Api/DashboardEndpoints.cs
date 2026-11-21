@@ -17,11 +17,9 @@ internal static class DashboardEndpoints
             var holidayStatus = await holidayProvider.GetStatusAsync(ct);
             var schedule = holidayStatus.Calendar is { } calendar
                 ? new WorkingDaySchedule(calendar.CoveredFrom, calendar.CoveredThrough, calendar.Holidays)
-                : WorkingDaySchedule.Unavailable;
+                : WorkingDaySchedule.WeekdaysOnly;
             var calculator = new BudgetCalculator(schedule);
-            var nextAllocationDate = schedule is WorkingDaySchedule workingDaySchedule
-                ? workingDaySchedule.NextAllocationDate(asOf)
-                : null;
+            var nextAllocationDate = schedule.NextAllocationDate(asOf);
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
             var balances = await db.Accounts.AsNoTracking().Select(x => x.TotalFunds).ToListAsync(ct);
             var storedItems = await db.SavingsItems.AsNoTracking().Include(x => x.Entries)

@@ -119,16 +119,15 @@ public sealed class HomeScenarios
     }
 
     [Fact]
-    public void Given_missing_holiday_coverage_When_opening_home_Then_it_shows_unavailable_recommendations_and_the_warning()
+    public void Given_missing_holiday_coverage_When_opening_home_Then_it_shows_weekday_estimates_and_the_warning()
     {
-        var unavailable = new DashboardItemResponse(Example, 75m, null, null, ContributionState.Unavailable);
+        var estimate = new DashboardItemResponse(Example, 75m, 25m, 3, ContributionState.Scheduled);
         var budget = Budget(new(2027, 1, 15), 25m) with
         {
-            RequiredMonthlySavings = null,
-            NextAllocationDate = null,
-            HolidayCalendar = new("GOV.UK bank holidays (England and Wales)", new(2027, 12, 31),
+            NextAllocationDate = new(2027, 2, 1),
+            HolidayCalendar = new("GOV.UK bank holidays (England and Wales)", null,
                 null, true, "The official holiday calendar is unavailable."),
-            Groups = [new(SavingsTerm.Short, [unavailable]), new(SavingsTerm.Medium, []), new(SavingsTerm.Long, [])]
+            Groups = [new(SavingsTerm.Short, [estimate]), new(SavingsTerm.Medium, []), new(SavingsTerm.Long, [])]
         };
         using var context = CreateContext(new ReplyHandler(_ => Json(budget)), TimeProvider.System);
 
@@ -136,12 +135,13 @@ public sealed class HomeScenarios
 
         page.WaitForAssertion(() =>
         {
-            Assert.Equal("Unavailable", page.Find("#monthly-required").TextContent);
-            Assert.Equal("Unavailable", page.Find("#next-allocation-date").TextContent);
+            Assert.Contains("25.00", page.Find("#monthly-required").TextContent);
+            Assert.Equal("01 Feb 2027", page.Find("#next-allocation-date").TextContent);
+            Assert.Contains("the estimate uses the first weekday of the month", page.Markup);
             Assert.Contains("The official holiday calendar is unavailable.", page.Markup);
             Assert.Contains("GOV.UK bank holidays (England and Wales)", page.Find("#holiday-calendar-source").TextContent);
             Assert.Contains("Unavailable", page.Find("#holiday-calendar-source").TextContent);
-            Assert.Contains("Unavailable", page.Find("tbody").TextContent);
+            Assert.Contains("Monthly", page.Find("tbody").TextContent);
         });
     }
 

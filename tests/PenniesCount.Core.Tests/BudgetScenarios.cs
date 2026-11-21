@@ -52,24 +52,34 @@ public sealed class BudgetScenarios
     }
 
     [Fact]
-    public void Given_an_uncovered_deadline_When_calculating_Then_the_recommendation_is_unavailable()
+    public void Given_an_uncovered_deadline_When_calculating_Then_a_weekday_payment_is_estimated()
     {
         var goal = new SavingsGoal(1200m, 300m, new(2027, 1, 1), new(2029, 1, 1));
 
         var result = _calculator.Calculate(goal, new(2028, 12, 15));
 
-        Assert.Equal(new Contribution(null, null, ContributionStatus.Unavailable), result);
+        Assert.Equal(new Contribution(900m, 1, ContributionStatus.Scheduled), result);
     }
 
     [Fact]
     public void Given_an_overdue_goal_and_unavailable_holiday_data_When_calculating_Then_the_full_remainder_is_needed_now()
     {
-        var calculator = new BudgetCalculator(WorkingDaySchedule.Unavailable);
+        var calculator = new BudgetCalculator(WorkingDaySchedule.WeekdaysOnly);
 
         var result = calculator.Calculate(
             new(1200m, 300m, new(2027, 1, 1), new(2027, 1, 14)), new(2027, 1, 15));
 
         Assert.Equal(new Contribution(900m, 0, ContributionStatus.NeededNow), result);
+    }
+
+    [Fact]
+    public void Given_an_alternative_schedule_with_no_estimate_When_calculating_Then_the_recommendation_is_unavailable()
+    {
+        var calculator = new BudgetCalculator(new FixedPaymentSchedule(null));
+
+        var result = calculator.Calculate(new(100m, 0m, new(2027, 1, 1), new(2027, 4, 1)), new(2027, 1, 15));
+
+        Assert.Equal(new Contribution(null, null, ContributionStatus.Unavailable), result);
     }
 
     [Fact]

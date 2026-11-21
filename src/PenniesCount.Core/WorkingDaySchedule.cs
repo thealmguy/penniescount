@@ -2,7 +2,8 @@ namespace PenniesCount.Core;
 
 public sealed class WorkingDaySchedule : IContributionSchedule
 {
-    public static IContributionSchedule Unavailable { get; } = new UnavailableSchedule();
+    public static WorkingDaySchedule WeekdaysOnly { get; } = new(DateOnly.MinValue, DateOnly.MaxValue, Array.Empty<DateOnly>());
+    private static readonly DateOnly LastMonth = new(DateOnly.MaxValue.Year, DateOnly.MaxValue.Month, 1);
 
     private readonly DateOnly _coveredFrom;
     private readonly DateOnly _coveredThrough;
@@ -20,30 +21,15 @@ public sealed class WorkingDaySchedule : IContributionSchedule
 
     public int? CountRemainingPayments(DateOnly asOf, DateOnly deadline, bool paidToday)
     {
-        if (deadline < asOf || (deadline == asOf && paidToday)) return 0;
-
         var month = new DateOnly(asOf.Year, asOf.Month, 1);
         var count = 0;
         while (month <= deadline)
         {
-            var candidate = month;
-            while (candidate <= deadline && candidate.Month == month.Month)
-            {
-                if (candidate.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
-                {
-                    if (candidate < _coveredFrom || candidate > _coveredThrough) return null;
-                    if (!_holidays.Contains(candidate))
-                    {
-                        if (candidate > asOf || (candidate == asOf && !paidToday)) count++;
-                        break;
-                    }
-                }
+            if (AllocationDateInMonth(month) is { } date && date <= deadline
+                && (date > asOf || (date == asOf && !paidToday)))
+                count++;
 
-                if (candidate == DateOnly.MaxValue) break;
-                candidate = candidate.AddDays(1);
-            }
-
-            if (month.Year == 9999 && month.Month == 12) break;
+            if (month == LastMonth) break;
             month = month.AddMonths(1);
         }
         return count;
@@ -54,31 +40,25 @@ public sealed class WorkingDaySchedule : IContributionSchedule
         var month = new DateOnly(asOf.Year, asOf.Month, 1);
         while (true)
         {
-            var candidate = month;
-            while (candidate.Month == month.Month)
-            {
-                if (candidate.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
-                {
-                    if (candidate < _coveredFrom || candidate > _coveredThrough) return null;
-                    if (!_holidays.Contains(candidate))
-                    {
-                        if (candidate >= asOf) return candidate;
-                        break;
-                    }
-                }
-
-                if (candidate == DateOnly.MaxValue) return null;
-                candidate = candidate.AddDays(1);
-            }
-
-            if (month.Year == 9999 && month.Month == 12) return null;
+            if (AllocationDateInMonth(month) is { } date && date >= asOf) return date;
+            if (month == LastMonth) return null;
             month = month.AddMonths(1);
         }
     }
 
-    private sealed class UnavailableSchedule : IContributionSchedule
+    private DateOnly? AllocationDateInMonth(DateOnly month)
     {
-        public int? CountRemainingPayments(DateOnly asOf, DateOnly deadline, bool paidToday) =>
-            deadline < asOf || (deadline == asOf && paidToday) ? 0 : null;
+        DateOnly? firstWeekday = null;
+        var daysInMonth = DateTime.DaysInMonth(month.Year, month.Month);
+        for (var offset = 0; offset < daysInMonth; offset++)
+        {
+            var date = month.AddDays(offset);
+            if (date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
+
+            firstWeekday ??= date;
+            if (date < _coveredFrom || date > _coveredThrough) return firstWeekday;
+            if (!_holidays.Contains(date)) return date;
+        }
+        return null;
     }
 }

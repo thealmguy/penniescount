@@ -22,12 +22,15 @@ public sealed class WorkingDayScheduleScenarios
         Assert.Equal(expected, schedule.CountRemainingPayments(DateOnly.Parse(today), DateOnly.Parse(deadline), paidToday));
     }
 
-    [Fact]
-    public void Given_an_uncovered_month_When_counting_Then_the_result_is_unavailable()
+    [Theory]
+    [InlineData("2028-01-02", 0)]
+    [InlineData("2028-01-03", 1)]
+    public void Given_mixed_coverage_When_counting_Then_known_holidays_and_the_fallback_deadline_are_respected(
+        string deadline, int expected)
     {
-        var schedule = new WorkingDaySchedule(new(2027, 1, 1), new(2027, 12, 31), []);
+        var schedule = new WorkingDaySchedule(new(2027, 1, 1), new(2027, 12, 31), [new(2027, 12, 1)]);
 
-        Assert.Null(schedule.CountRemainingPayments(new(2027, 12, 15), new(2028, 1, 31), false));
+        Assert.Equal(expected, schedule.CountRemainingPayments(new(2027, 12, 2), DateOnly.Parse(deadline), true));
     }
 
     [Fact]
@@ -84,24 +87,37 @@ public sealed class WorkingDayScheduleScenarios
     }
 
     [Fact]
-    public void Given_an_uncovered_next_allocation_When_finding_the_date_Then_it_is_unavailable()
+    public void Given_an_uncovered_next_allocation_When_finding_the_date_Then_it_is_the_first_weekday()
     {
         var schedule = new WorkingDaySchedule(new(2027, 1, 1), new(2027, 12, 31), []);
 
-        Assert.Null(schedule.NextAllocationDate(new(2027, 12, 15)));
+        Assert.Equal(new DateOnly(2028, 1, 3), schedule.NextAllocationDate(new(2027, 12, 15)));
     }
 
     [Fact]
-    public void Given_an_unavailable_schedule_When_counting_Then_no_dates_are_assumed()
+    public void Given_holiday_coverage_ends_mid_month_When_finding_the_date_Then_it_falls_back_to_the_first_weekday()
     {
-        Assert.Null(WorkingDaySchedule.Unavailable.CountRemainingPayments(
-            new(2027, 1, 15), new(2027, 4, 1), false));
-        Assert.Equal(0, WorkingDaySchedule.Unavailable.CountRemainingPayments(
-            new(2027, 4, 2), new(2027, 4, 1), false));
-        Assert.Null(WorkingDaySchedule.Unavailable.CountRemainingPayments(
-            new(2027, 4, 1), new(2027, 4, 1), false));
-        Assert.Equal(0, WorkingDaySchedule.Unavailable.CountRemainingPayments(
-            new(2027, 4, 1), new(2027, 4, 1), true));
+        var schedule = new WorkingDaySchedule(new(2027, 1, 1), new(2027, 1, 1), [new(2027, 1, 1)]);
+
+        Assert.Equal(new DateOnly(2027, 1, 1), schedule.NextAllocationDate(new(2027, 1, 1)));
+    }
+
+    [Fact]
+    public void Given_coverage_ends_on_the_first_non_holiday_weekday_When_scheduling_Then_that_date_is_used()
+    {
+        var schedule = new WorkingDaySchedule(new(2027, 1, 1), new(2027, 12, 2), [new(2027, 12, 1)]);
+
+        Assert.Equal(new DateOnly(2027, 12, 2), schedule.NextAllocationDate(new(2027, 12, 1)));
+    }
+    [Fact]
+    public void Given_no_calendar_When_scheduling_Then_the_first_weekday_counts_unless_already_paid()
+    {
+        var schedule = WorkingDaySchedule.WeekdaysOnly;
+        var monday = new DateOnly(2028, 1, 3);
+
+        Assert.Equal(monday, schedule.NextAllocationDate(new(2028, 1, 1)));
+        Assert.Equal(1, schedule.CountRemainingPayments(monday, monday, false));
+        Assert.Equal(0, schedule.CountRemainingPayments(monday, new(2028, 1, 4), true));
     }
 
     [Fact]
