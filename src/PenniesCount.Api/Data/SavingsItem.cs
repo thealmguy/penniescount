@@ -23,6 +23,8 @@ public sealed class SavingsItem
     public decimal FundedAmount => EffectiveEntries.Sum(x => x.FundingEffect);
     public decimal DrawnDownAmount => EffectiveEntries.Sum(x => x.DrawdownEffect);
 
+    public bool HasPaymentOn(DateOnly date) => EffectiveEntries.Any(x =>
+        x.Type == LedgerEntryType.AllocationPayment && x.EffectiveDate == date);
 
     public IEnumerable<SavingsLedgerEntry> History => Entries.OrderBy(x => x.EffectiveDate)
         .ThenBy(x => x.RecordedAtUtc).ThenBy(x => x.Id);

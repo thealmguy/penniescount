@@ -49,6 +49,20 @@ Push-Location .\tests\PenniesCount.Api.Tests
 try { dotnet stryker } finally { Pop-Location }
 ```
 
+Run mutation testing for working-day budgeting calculations:
+
+```powershell
+Push-Location .\tests\PenniesCount.Core.Tests
+try { dotnet stryker --config-file stryker-working-days.json } finally { Pop-Location }
+```
+
+Run mutation testing for holiday parsing and caching:
+
+```powershell
+Push-Location .\tests\PenniesCount.Api.Tests
+try { dotnet stryker --config-file stryker-holidays.json } finally { Pop-Location }
+```
+
 Run the savings ledger gate in the same test directory:
 
 ```powershell
@@ -180,11 +194,15 @@ reapplying a migration.
   even future-start items, not gross funding already drawn down.
 - Unallocated = savings minus allocated. Positive means spare funds; negative
   means over-allocation.
-- Active items spread their unallocated remainder across 1st-of-month dates
-  strictly after today and on/before their deadline. Today's allocation is
-  assumed already recorded, even on the 1st.
+- Active items spread their unallocated remainder across the first working day
+  of each month, on/after today and on/before their inclusive deadline. A working
+  day excludes weekends and England-and-Wales public holidays from the official
+  GOV.UK feed.
+- Today's allocation is counted unless an effective allocation payment for that
+  item is recorded for today. Opening funding, funding adjustments and drawdowns
+  do not count as an allocation payment.
 - A GBP 1,200 target with GBP 300 allocated on 15 January and a 15 April deadline
-  has three payments left (1 February, 1 March, 1 April): GBP 300 per month.
+  has three payments left (1 February, 1 March, 1 April 2027): GBP 300 per month.
 - Future-start items require zero until their inclusive start date. Fully
   allocated items require zero.
 - If no payment date remains, the full remainder is **needed now** and included
@@ -195,6 +213,10 @@ reapplying a migration.
   of dates or funding state. Drawdowns do not create a new funding requirement.
 - Each recommendation rounds upward to the nearest penny. The overview sums
   those displayed recommendations. Recommendations never change allocations.
+- If an item's required allocation dates extend beyond known GOV.UK coverage,
+  its contribution and the overall monthly total are unavailable rather than
+  guessed or partially summed. The dashboard continues to show balances, items
+  and independently calculable statuses.
 
 The API uses one host-local calendar date per dashboard or savings-item request
 for all derived categories and calculations. History
@@ -202,8 +224,19 @@ timestamps use UTC. Refresh after writes or external changes; the open homepage
 also checks for a local date change every 30 seconds. Financial calculations
 are not persisted or performed in the UI.
 
+The holiday provider validates and caches the England-and-Wales list from
+[GOV.UK](https://www.gov.uk/bank-holidays.json). A year is treated as complete
+only when the feed has at least one event in both January and December; coverage
+is the contiguous sequence of complete years ending at the latest complete year.
+No bank holidays are inferred beyond that range. The last-known-good response is
+cached at `%LOCALAPPDATA%\PenniesCount\bank-holidays.json` by default; configure
+`BankHolidays:CachePath` to override it. The API refreshes about every 24 hours,
+retries after failures no more often than every 15 minutes, and reports stale or
+unavailable holiday data in the dashboard.
+
 `IContributionSchedule` in Core is the replacement seam for payment-date rules;
-`FirstOfMonthSchedule` is the only supported policy in this pass.
+`WorkingDaySchedule` applies the covered holiday set and reports unknown dates
+as unavailable.
 
 ## API contract
 
@@ -235,7 +268,7 @@ dates must be on/after start dates. Past dates are supported.
 | POST | `/api/savings-items/{id}/payments` | `amount`, `paidOn`, item `version`; returns the payment entry and resource location |
 | POST | `/api/savings-items/{id}/ledger/{entryId}/reversal` | item `version`; returns the reversal entry and resource location |
 | PUT | `/api/savings-items/{id}/removal` | item `version`; returns removed item |
-| GET | `/api/dashboard` | Overview and calculated grouped items |
+| GET | `/api/dashboard` | Overview, grouped items, `nextAllocationDate` and holiday-calendar status |
 
 Account `type` values: `0` Cash Account, `1` Cash ISA, `2` Stocks and Shares ISA,
 `3` Investment Account. Derived item `type` values: `0` Short, `1` Medium,
@@ -255,11 +288,16 @@ ordered by effective date, recorded timestamp and ID. Writes to an entry that is
 already reversed return 409.
 
 The dashboard returns `asOfDate`, `totalSavings`, `totalAllocated`,
-`unallocatedBalance`, `requiredMonthlySavings` and `groups`. Groups always
+`unallocatedBalance`, nullable `requiredMonthlySavings`, nullable
+`nextAllocationDate`, `holidayCalendar` and `groups`. Holiday status has
+`source`, nullable `coveredThrough` and `lastSuccessfulRefreshUtc`, `isStale`
+and an optional `warning`. Groups always
 include Short, Medium, Long and Past in that order. Each group has `type` and `items`;
 each row includes the item record, `remainingAmount`, `requiredContribution`,
-`remainingPayments` and `status`. Status values: `0` Fully allocated, `1` Not
-started, `2` Monthly, `3` Needed now. Items sort by deadline, name and ID within each group; the
+`remainingPayments`, `paidToday` and `status`. The contribution and payment count
+are nullable when holiday coverage is insufficient; monthly savings is null if
+any item is unavailable. Status values: `0` Fully allocated, `1` Not started,
+`2` Monthly, `3` Needed now, `4` Unavailable. Items sort by deadline, name and ID within each group; the
 savings-item list sorts first by derived category, then deadline, name and ID.
 
 Creation returns 201; reads/updates return 200; drawdown deletion returns 204. Validation failures return 400

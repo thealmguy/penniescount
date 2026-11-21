@@ -34,8 +34,29 @@
             </div>
             <div class="col-sm-6 col-xl-3"><dt>Required monthly savings</dt><dd id="monthly-required">@Display.Money(_budget.RequiredMonthlySavings)</dd></div>
         </dl>
-        <p>For your next 1st-of-month allocation. Today's allocation is assumed already recorded.
-            Items not yet started contribute zero. Recommendations round upward to the nearest penny.</p>
+        <p>Allocations are scheduled for the first working day of each month; weekends and England-and-Wales bank holidays
+            are skipped. The next allocation date is
+            <span id="next-allocation-date">@(_budget.NextAllocationDate?.ToString("dd MMM yyyy") ?? "Unavailable")</span>.
+            Today's date is excluded only for items with a payment recorded today. Items not yet started contribute zero.
+            Recommendations round upward to the nearest penny.</p>
+        <p id="holiday-calendar-source">
+            Holiday data source: @_budget.HolidayCalendar.Source.
+            Coverage through: @(_budget.HolidayCalendar.CoveredThrough?.ToString("dd MMM yyyy") ?? "Unavailable").
+            Last successful refresh:
+            @(_budget.HolidayCalendar.LastSuccessfulRefreshUtc?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Unavailable").
+        </p>
+        @if (_budget.HolidayCalendar.Warning is not null)
+        {
+            <div class="alert alert-warning" role="status">@_budget.HolidayCalendar.Warning</div>
+        }
+        else if (_budget.HolidayCalendar.IsStale)
+        {
+            <div class="alert alert-warning" role="status">Holiday data may be out of date.</div>
+        }
+        @if (_budget.Groups.SelectMany(x => x.Items).Any(x => x.Status == ContributionState.Unavailable))
+        {
+            <div class="alert alert-warning" role="status">Some recommendations are unavailable because the holiday calendar does not cover their allocation dates.</div>
+        }
         <p>Total allocated is the amount still available to spend on active items. Drawdowns do not update accounts:
             apparent spare funds may be temporary until you manually submit the new account balances.</p>
         @if (_budget.Groups.SelectMany(x => x.Items).Any(x => x.Status == ContributionState.NeededNow))

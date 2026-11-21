@@ -36,6 +36,10 @@
                                     {
                                         <small class="d-block">@row.RemainingPayments payment(s) remaining</small>
                                     }
+                                    @if (row.PaidToday)
+                                    {
+                                        <small class="d-block">Today's payment is recorded.</small>
+                                    }
                                 </td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary" disabled="@Busy" @onclick="() => Select(item)">Update allocation</button>

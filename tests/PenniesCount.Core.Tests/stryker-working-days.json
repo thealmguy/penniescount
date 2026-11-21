@@ -1,0 +1,14 @@
+{
+  "stryker-config": {
+    "project": "PenniesCount.Core.csproj",
+    "mutate": [
+      "**/WorkingDaySchedule.cs",
+      "**/BudgetCalculator.cs"
+    ],
+    "test-case-filter": "FullyQualifiedName~WorkingDayScheduleScenarios|FullyQualifiedName~BudgetScenarios",
+    "mutation-level": "Complete",
+    "concurrency": 4,
+    "reporters": [ "progress", "cleartext", "html", "json" ],
+    "thresholds": { "high": 100, "low": 100, "break": 100 }
+  }
+}

@@ -2,6 +2,7 @@ using System.Data.SqlTypes;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PenniesCount.Api.Holidays;
 using PenniesCount.Contracts;
 
 namespace PenniesCount.Api.Tests;
@@ -20,6 +21,9 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         var empty = (await client.GetFromJsonAsync<DashboardResponse>("/api/dashboard"))!;
         Assert.Equal(0m, empty.TotalSavings);
         Assert.Equal(0m, empty.RequiredMonthlySavings);
+        Assert.Equal(new DateOnly(2027, 2, 1), empty.NextAllocationDate);
+        Assert.Equal(HolidayCalendarStatus.Source, empty.HolidayCalendar.Source);
+        Assert.Equal(new DateOnly(2028, 12, 31), empty.HolidayCalendar.CoveredThrough);
         Assert.Equal(Enum.GetValues<SavingsTerm>(), empty.Groups.Select(x => x.Type));
         Assert.All(empty.Groups, group => Assert.Empty(group.Items));
 
@@ -53,6 +57,7 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         Assert.Equal(75m, dashboard.TotalAllocated);
         Assert.Equal(75m, dashboard.UnallocatedBalance);
         Assert.Equal(125m, dashboard.RequiredMonthlySavings);
+        Assert.Equal(new DateOnly(2027, 2, 1), dashboard.NextAllocationDate);
         Assert.Equal(ContributionState.NeededNow, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Urgent example").Status);
         Assert.Equal(ContributionState.NotStarted, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Future example").Status);
         Assert.Equal(dashboard.RequiredMonthlySavings, dashboard.Groups.SelectMany(x => x.Items).Sum(x => x.RequiredContribution));

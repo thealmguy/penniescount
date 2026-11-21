@@ -4,6 +4,9 @@
 @entryId = REPLACE_WITH_LEDGER_ENTRY_ID
 @version = REPLACE_WITH_LATEST_ITEM_VERSION
 
+### Dashboard overview, next allocation date and holiday-data status
+GET {{baseUrl}}/api/dashboard
+
 ### Create a fictional fully funded item (only against a disposable database)
 POST {{baseUrl}}/api/savings-items
 Content-Type: application/json

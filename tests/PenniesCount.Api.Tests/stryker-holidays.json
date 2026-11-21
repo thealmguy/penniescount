@@ -1,0 +1,16 @@
+{
+  "stryker-config": {
+    "project": "PenniesCount.Api.csproj",
+    "mutate": [
+      "**/Holidays/BankHolidayCalendar.cs",
+      "**/Holidays/GovUkBankHolidayParser.cs",
+      "**/Holidays/GovUkBankHolidayProvider.cs"
+    ],
+    "test-case-filter": "FullyQualifiedName~GovUkBankHolidayProviderScenarios",
+    "mutation-level": "Complete",
+    "concurrency": 4,
+    "ignore-methods": [ "*LogWarning" ],
+    "reporters": [ "progress", "cleartext", "html", "json" ],
+    "thresholds": { "high": 100, "low": 100, "break": 100 }
+  }
+}

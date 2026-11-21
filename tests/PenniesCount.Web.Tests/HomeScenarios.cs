@@ -119,6 +119,33 @@ public sealed class HomeScenarios
     }
 
     [Fact]
+    public void Given_missing_holiday_coverage_When_opening_home_Then_it_shows_unavailable_recommendations_and_the_warning()
+    {
+        var unavailable = new DashboardItemResponse(Example, 75m, null, null, ContributionState.Unavailable);
+        var budget = Budget(new(2027, 1, 15), 25m) with
+        {
+            RequiredMonthlySavings = null,
+            NextAllocationDate = null,
+            HolidayCalendar = new("GOV.UK bank holidays (England and Wales)", new(2027, 12, 31),
+                null, true, "The official holiday calendar is unavailable."),
+            Groups = [new(SavingsTerm.Short, [unavailable]), new(SavingsTerm.Medium, []), new(SavingsTerm.Long, [])]
+        };
+        using var context = CreateContext(new ReplyHandler(_ => Json(budget)), TimeProvider.System);
+
+        var page = context.Render<Home>();
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.Equal("Unavailable", page.Find("#monthly-required").TextContent);
+            Assert.Equal("Unavailable", page.Find("#next-allocation-date").TextContent);
+            Assert.Contains("The official holiday calendar is unavailable.", page.Markup);
+            Assert.Contains("GOV.UK bank holidays (England and Wales)", page.Find("#holiday-calendar-source").TextContent);
+            Assert.Contains("Unavailable", page.Find("#holiday-calendar-source").TextContent);
+            Assert.Contains("Unavailable", page.Find("tbody").TextContent);
+        });
+    }
+
+    [Fact]
     public void Given_a_goal_due_today_When_the_date_rolls_over_Then_home_renders_the_refreshed_past_group()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2027, 4, 15, 23, 59, 45, TimeSpan.Zero));
@@ -154,6 +181,7 @@ public sealed class HomeScenarios
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = JsonContent.Create(new DashboardResponse(new(2027, 1, 15), 0m, 0m, 0m, 0m,
+                    new(2027, 2, 1), CurrentHolidays,
                     [new(SavingsTerm.Short, []), new(SavingsTerm.Medium, []), new(SavingsTerm.Long, [])]))
             });
     }
@@ -161,7 +189,12 @@ public sealed class HomeScenarios
     private static readonly SavingsItemResponse Example = new(Guid.NewGuid(), "Example goal", SavingsTerm.Short,
         100m, 25m, new(2027, 1, 1), new(2027, 4, 15), "AAAAAAAAAAA=") { AvailableAmount = 25m };
 
+    private static readonly HolidayCalendarResponse CurrentHolidays = new(
+        "GOV.UK bank holidays (England and Wales)", new(2028, 12, 31),
+        new(2027, 1, 1, 0, 0, 0, TimeSpan.Zero), false, null);
+
     private static DashboardResponse Budget(DateOnly date, decimal monthly) => new(date, 100m, 25m, 75m, monthly,
+        new DateOnly(date.Year, date.Month, 1).AddMonths(1), CurrentHolidays,
         [new(SavingsTerm.Short, [new(Example, 75m, monthly, 3, ContributionState.Scheduled)]),
             new(SavingsTerm.Medium, []), new(SavingsTerm.Long, [])]);
 

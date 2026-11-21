@@ -7,6 +7,7 @@ public static class Display
 {
     private static readonly CultureInfo Gbp = CultureInfo.GetCultureInfo("en-GB");
     public static string Money(decimal amount) => amount.ToString("C2", Gbp);
+    public static string Money(decimal? amount) => amount.HasValue ? Money(amount.Value) : "Unavailable";
     public static string SavingsCategoryName(SavingsTerm type) => type switch
     {
         SavingsTerm.Short => "Short term",
@@ -38,6 +39,7 @@ public static class Display
         ContributionState.NotStarted => "Not started",
         ContributionState.Scheduled => "Monthly",
         ContributionState.NeededNow => "Needed now",
+        ContributionState.Unavailable => "Unavailable",
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
 }
