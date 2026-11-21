@@ -10,6 +10,7 @@
 <h1>Savings budget</h1>
 <p>Plan what your savings are for.</p>
 <a class="btn btn-primary mb-3" href="savings-items/new">Add savings item</a>
+<a class="btn btn-outline-secondary mb-3" href="savings-items/removed">Removed items</a>
 <button class="btn btn-outline-secondary mb-3" disabled="@Busy" @onclick="LoadAsync">Refresh budget</button>
 @if (Error is not null)
 {
@@ -35,6 +36,8 @@
         </dl>
         <p>For your next 1st-of-month allocation. Today's allocation is assumed already recorded.
             Items not yet started contribute zero. Recommendations round upward to the nearest penny.</p>
+        <p>Total allocated is the amount still available to spend on active items. Drawdowns do not update accounts:
+            apparent spare funds may be temporary until you manually submit the new account balances.</p>
         @if (_budget.Groups.SelectMany(x => x.Items).Any(x => x.Status == ContributionState.NeededNow))
         {
             <div class="alert alert-warning" role="status">Some items need funds before the next monthly payment, or are overdue.

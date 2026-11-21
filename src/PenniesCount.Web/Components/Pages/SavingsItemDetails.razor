@@ -1,0 +1,166 @@
+@page "/savings-items/{Id:guid}"
+@rendermode InteractiveServer
+@inherits ApiPageBase
+
+<PageTitle>Savings item drawdowns</PageTitle>
+<h1>Savings item drawdowns</h1>
+<a href="/">Back to budget</a>
+<button class="btn btn-outline-secondary ms-2" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="LoadAsync">Refresh item</button>
+@if (Error is not null)
+{
+    <div class="alert alert-danger mt-3" role="alert">@Error</div>
+    <p>Displayed figures are from the last successful refresh. If the item changed, cancel the edit and refresh before retrying.</p>
+}
+@if (_history is not null)
+{
+    var item = _history.Item;
+    <h2>@item.Name</h2>
+    @if (item.IsRemoved)
+    {
+        <p role="status">Removed - read-only. This item no longer contributes to budget totals.</p>
+    }
+    <dl>
+        <dt>Original target</dt><dd id="item-target">@Display.Money(item.TargetAmount)</dd>
+        <dt>Total funded allocation (including drawdowns)</dt><dd id="item-funded">@Display.Money(item.AllocatedAmount)</dd>
+        <dt>Drawn down</dt><dd id="item-drawn">@Display.Money(item.DrawnDownAmount)</dd>
+        <dt>Available to spend</dt><dd id="item-available">@Display.Money(item.AvailableAmount)</dd>
+    </dl>
+    <p>Drawdowns record spending only. They do not move money or change account totals. Update account balances manually when you move the money.</p>
+    @if (!item.IsRemoved)
+    {
+        <button id="add-drawdown" class="btn btn-primary" disabled="@(Busy || _form is not null || _confirmation is not null || item.AvailableAmount == 0)" @onclick="() => Edit(null)">Record drawdown</button>
+        <button id="remove-item" class="btn btn-outline-danger" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="ConfirmRemoval">Mark removed</button>
+    }
+    @if (_form is not null)
+    {
+        <h3>@(_editingId.HasValue ? "Correct drawdown" : "Record drawdown")</h3>
+        <EditForm Model="_form" OnValidSubmit="SaveAsync" FormName="drawdown">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@Busy">
+                <label for="drawdown-amount">Amount (GBP)</label>
+                <InputNumber id="drawdown-amount" class="form-control" @bind-Value="_form.Amount" step="0.01" />
+                <label for="spent-on">Spending date</label>
+                <InputDate id="spent-on" class="form-control" @bind-Value="_form.SpentOn" />
+                <label for="drawdown-description">Description (optional, up to 200 characters)</label>
+                <InputText id="drawdown-description" class="form-control" @bind-Value="_form.Description" maxlength="200" />
+                <button type="submit" class="btn btn-primary mt-2">Save drawdown</button>
+                <button type="button" class="btn btn-secondary mt-2" @onclick="Cancel">Cancel</button>
+            </fieldset>
+        </EditForm>
+    }
+    @if (_confirmation is not null)
+    {
+        <section class="alert alert-warning mt-3" aria-label="Confirm action">
+            <p>@(_confirmation == "remove"
+                ? "Mark this item removed? It will leave all budget sums, with its history retained read-only. This cannot be undone and does not record spending or update accounts."
+                : "Delete this drawdown? Its amount will become available again; account balances and total funding will not change.")</p>
+            <button id="confirm-action" class="btn btn-danger" disabled="@Busy" @onclick="ConfirmAsync">Confirm</button>
+            <button class="btn btn-secondary" disabled="@Busy" @onclick="Cancel">Cancel</button>
+        </section>
+    }
+    <h3>Drawdown history</h3>
+    @if (_history.Drawdowns.Length == 0)
+    {
+        <p>No drawdowns recorded.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table">
+                <thead><tr><th>Date</th><th>Amount</th><th>Description</th><th>Recorded (UTC)</th>@if (!item.IsRemoved) { <th>Actions</th> }</tr></thead>
+                <tbody>
+                    @foreach (var record in _history.Drawdowns)
+                    {
+                        <tr @key="record.Id">
+                            <td>@record.SpentOn.ToString("dd MMM yyyy")</td><td>@Display.Money(record.Amount)</td>
+                            <td>@record.Description</td><td>@record.RecordedAtUtc.ToString("dd MMM yyyy HH:mm:ss")</td>
+                            @if (!item.IsRemoved)
+                            {
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary edit-drawdown" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="() => Edit(record)">Correct</button>
+                                    <button class="btn btn-sm btn-outline-danger delete-drawdown" disabled="@(Busy || _form is not null || _confirmation is not null)" @onclick="() => ConfirmDeletion(record.Id)">Delete</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+else
+{
+    <p>@(Busy ? "Loading item..." : "Item has not loaded. Retry with Refresh item.")</p>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private SavingsDrawdownHistoryResponse? _history;
+    private SaveDrawdownRequest? _form;
+    private Guid? _editingId;
+    private string? _confirmation;
+    private Guid _deletingId;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+    private async Task LoadAsync() => await PerformAsync(async () => _history = await Api.GetDrawdownsAsync(Id));
+
+    private void Edit(SavingsDrawdownResponse? record)
+    {
+        if (_history is null || Busy) return;
+        ClearError();
+        _editingId = record?.Id;
+        _form = new()
+        {
+            Amount = record?.Amount ?? _history.Item.AvailableAmount,
+            SpentOn = record?.SpentOn ?? _history.AsOfDate, Description = record?.Description,
+            Version = _history.Item.Version
+        };
+    }
+
+    private void Cancel()
+    {
+        if (Busy) return;
+        _form = null;
+        _confirmation = null;
+        ClearError();
+    }
+
+    private void ConfirmRemoval()
+    {
+        ClearError();
+        _confirmation = "remove";
+    }
+
+    private void ConfirmDeletion(Guid id)
+    {
+        ClearError();
+        _deletingId = id;
+        _confirmation = "delete";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is null) return;
+        if (await PerformAsync(async () => await Api.SaveDrawdownAsync(Id, _editingId, _form)))
+        {
+            _form = null;
+            await LoadAsync();
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_history is null || _confirmation is null) return;
+        var request = new ItemVersionRequest { Version = _history.Item.Version };
+        if (await PerformAsync(async () =>
+        {
+            if (_confirmation == "remove") await Api.RemoveItemAsync(Id, request);
+            else await Api.DeleteDrawdownAsync(Id, _deletingId, request);
+        }))
+        {
+            _confirmation = null;
+            await LoadAsync();
+        }
+    }
+}

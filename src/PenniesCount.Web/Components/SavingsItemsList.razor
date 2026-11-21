@@ -19,14 +19,15 @@
         {
             <div class="table-responsive">
                 <table class="table align-middle">
-                    <thead><tr><th>Item</th><th>Target</th><th>Allocated</th><th>Remaining</th><th>Start</th><th>Save by</th><th>Required contribution</th><th>Status</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Item</th><th>Target</th><th>Funded allocation</th><th>Drawn down</th><th>Available to spend</th><th>Funding remaining</th><th>Start</th><th>Save by</th><th>Required contribution</th><th>Status</th><th>Action</th></tr></thead>
                     <tbody>
                         @foreach (var row in group.Items)
                         {
                             var item = row.Item;
                             <tr @key="item.Id">
                                 <td>@item.Name</td><td>@Display.Money(item.TargetAmount)</td>
-                                <td>@Display.Money(item.AllocatedAmount)</td><td>@Display.Money(row.RemainingAmount)</td>
+                                <td>@Display.Money(item.AllocatedAmount)</td><td>@Display.Money(item.DrawnDownAmount)</td>
+                                <td>@Display.Money(item.AvailableAmount)</td><td>@Display.Money(row.RemainingAmount)</td>
                                 <td>@item.StartDate.ToString("dd MMM yyyy")</td><td>@item.TargetDate.ToString("dd MMM yyyy")</td>
                                 <td>@Display.Money(row.RequiredContribution)</td>
                                 <td>
@@ -36,7 +37,10 @@
                                         <small class="d-block">@row.RemainingPayments payment(s) remaining</small>
                                     }
                                 </td>
-                                <td><button class="btn btn-sm btn-outline-primary" disabled="@Busy" @onclick="() => Select(item)">Update allocation</button></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" disabled="@Busy" @onclick="() => Select(item)">Update allocation</button>
+                                    <a href="@($"savings-items/{item.Id}")" class="d-block">Details / draw down</a>
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -49,7 +53,7 @@
     @if (_selected is not null)
     {
         <h2 id="allocation-title">Allocation for @_selected.Name</h2>
-        <p>This is a recorded allocation from the pooled savings, not an account transfer.</p>
+        <p>This is total funding to date, including money already drawn down, not an account transfer.</p>
         @if (Error is not null)
         {
             <div class="alert alert-danger" role="alert">@Error</div>
@@ -59,7 +63,7 @@
             <DataAnnotationsValidator />
             <ValidationSummary />
             <fieldset disabled="@Busy">
-                <label for="allocated-total" class="form-label">Allocated amount (GBP), up to @Display.Money(_selected.TargetAmount)</label>
+                <label for="allocated-total" class="form-label">Total funding to date (GBP), from @Display.Money(_selected.DrawnDownAmount) to @Display.Money(_selected.TargetAmount)</label>
                 <InputNumber id="allocated-total" class="form-control" @bind-Value="_allocation.AllocatedAmount" step="0.01" autofocus />
                 <button type="submit" class="btn btn-primary mt-2">Save allocation</button>
                 <button type="button" class="btn btn-secondary mt-2" @onclick="CloseAsync">Cancel</button>

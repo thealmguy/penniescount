@@ -47,6 +47,8 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         Assert.Equal(ContributionState.NeededNow, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Urgent example").Status);
         Assert.Equal(ContributionState.NotStarted, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Future example").Status);
         Assert.Equal(dashboard.RequiredMonthlySavings, dashboard.Groups.SelectMany(x => x.Items).Sum(x => x.RequiredContribution));
+        Assert.All(dashboard.Groups, group => Assert.Equal(
+            group.Items.OrderBy(x => x.Item.TargetDate).ThenBy(x => x.Item.Name).ThenBy(x => x.Item.Id), group.Items));
 
         using var funds = await client.PutAsJsonAsync($"/api/accounts/{account.Id}/balance",
             new UpdateBalanceRequest { TotalFunds = 0m, Version = account.Version });

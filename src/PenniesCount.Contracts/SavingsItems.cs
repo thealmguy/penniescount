@@ -41,6 +41,34 @@ public sealed class UpdateAllocationRequest
 }
 
 public sealed record SavingsItemResponse(Guid Id, string Name, SavingsTerm Type, decimal TargetAmount,
-    decimal AllocatedAmount, DateOnly StartDate, DateOnly TargetDate, string Version);
+    decimal AllocatedAmount, DateOnly StartDate, DateOnly TargetDate, string Version)
+{
+    public decimal DrawnDownAmount { get; init; }
+    public decimal AvailableAmount { get; init; }
+    public bool IsRemoved { get; init; }
+}
 
 public sealed record SavingsItemsResponse(DateOnly AsOfDate, SavingsItemResponse[] Items);
+
+public sealed class ItemVersionRequest
+{
+    [Required, RegularExpression("^[A-Za-z0-9+/]{11}=$")]
+    public string Version { get; set; } = "";
+}
+
+public sealed class SaveDrawdownRequest
+{
+    [Money(positive: true)]
+    public decimal Amount { get; set; }
+    public DateOnly SpentOn { get; set; }
+    [StringLength(200)]
+    public string? Description { get; set; }
+    [Required, RegularExpression("^[A-Za-z0-9+/]{11}=$")]
+    public string Version { get; set; } = "";
+}
+
+public sealed record SavingsDrawdownResponse(Guid Id, decimal Amount, DateOnly SpentOn,
+    string? Description, DateTimeOffset RecordedAtUtc);
+
+public sealed record SavingsDrawdownHistoryResponse(DateOnly AsOfDate, SavingsItemResponse Item,
+    SavingsDrawdownResponse[] Drawdowns);

@@ -15,7 +15,8 @@ internal static class DashboardEndpoints
             var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
             var balances = await db.Accounts.AsNoTracking().Select(x => x.TotalFunds).ToListAsync(ct);
-            var storedItems = await db.SavingsItems.AsNoTracking().OrderBy(x => x.TargetDate)
+            var storedItems = await db.SavingsItems.AsNoTracking().Include(x => x.Drawdowns)
+                .Where(x => !x.IsRemoved).OrderBy(x => x.TargetDate)
                 .ThenBy(x => x.Name).ThenBy(x => x.Id).ToListAsync(ct);
             await transaction.CommitAsync(ct);
             var items = storedItems.Select(x => x.ToResponse(asOf)).ToArray();
@@ -36,7 +37,7 @@ internal static class DashboardEndpoints
                         contribution.RequiredAmount, contribution.RemainingPayments, status);
                 }).ToArray())).ToArray();
             var savings = balances.Sum();
-            var allocated = items.Sum(x => x.AllocatedAmount);
+            var allocated = items.Sum(x => x.AvailableAmount);
             return new DashboardResponse(asOf, savings, allocated, savings - allocated,
                 groups.SelectMany(x => x.Items).Sum(x => x.RequiredContribution), groups);
         });

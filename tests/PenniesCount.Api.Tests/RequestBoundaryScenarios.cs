@@ -8,6 +8,24 @@ namespace PenniesCount.Api.Tests;
 
 public sealed class RequestBoundaryScenarios
 {
+    [Theory]
+    [InlineData("POST", "/drawdowns")]
+    [InlineData("PUT", "/drawdowns/00000000-0000-0000-0000-000000000001")]
+    [InlineData("DELETE", "/drawdowns/00000000-0000-0000-0000-000000000001")]
+    [InlineData("PUT", "/removal")]
+    public async Task Given_non_json_drawdown_writes_When_submitted_Then_they_are_rejected_before_database_access(string method, string suffix)
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(new HttpMethod(method),
+            "/api/savings-items/00000000-0000-0000-0000-000000000001" + suffix)
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "text/plain")
+        };
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+    }
+
     [Fact]
     public async Task Given_a_non_json_submission_When_creating_an_account_Then_it_is_rejected_before_database_access()
     {

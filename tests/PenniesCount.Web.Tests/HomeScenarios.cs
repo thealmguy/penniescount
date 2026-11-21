@@ -71,14 +71,14 @@ public sealed class HomeScenarios
             if (request.Method == HttpMethod.Put)
             {
                 allocated = true;
-                return Json(Example with { AllocatedAmount = 100m });
+                return Json(Example with { AllocatedAmount = 100m, AvailableAmount = 100m });
             }
             return Json(allocated
                 ? Budget(new(2027, 1, 15), 0m) with
                 {
                     TotalAllocated = 100m, UnallocatedBalance = 0m,
                     Groups = [new(SavingsTerm.Short,
-                        [new(Example with { AllocatedAmount = 100m }, 0m, 0m, 0, ContributionState.Funded)])]
+                        [new(Example with { AllocatedAmount = 100m, AvailableAmount = 100m }, 0m, 0m, 0, ContributionState.Funded)])]
                 }
                 : Budget(new(2027, 1, 15), 25m));
         }), TimeProvider.System);
@@ -97,8 +97,9 @@ public sealed class HomeScenarios
             Assert.Contains("0.00", page.Find("#monthly-required").TextContent);
             var cells = page.FindAll("tbody td");
             Assert.Contains("100.00", cells[2].TextContent);
-            Assert.Contains("0.00", cells[3].TextContent);
-            Assert.Contains("Fully allocated", cells[7].TextContent);
+            Assert.Contains("100.00", cells[4].TextContent);
+            Assert.Contains("0.00", cells[5].TextContent);
+            Assert.Contains("Fully allocated", cells[9].TextContent);
         });
     }
 
@@ -158,7 +159,7 @@ public sealed class HomeScenarios
     }
 
     private static readonly SavingsItemResponse Example = new(Guid.NewGuid(), "Example goal", SavingsTerm.Short,
-        100m, 25m, new(2027, 1, 1), new(2027, 4, 15), "AAAAAAAAAAA=");
+        100m, 25m, new(2027, 1, 1), new(2027, 4, 15), "AAAAAAAAAAA=") { AvailableAmount = 25m };
 
     private static DashboardResponse Budget(DateOnly date, decimal monthly) => new(date, 100m, 25m, 75m, monthly,
         [new(SavingsTerm.Short, [new(Example, 75m, monthly, 3, ContributionState.Scheduled)]),

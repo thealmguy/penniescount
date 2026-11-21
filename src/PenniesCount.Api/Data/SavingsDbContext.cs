@@ -7,6 +7,7 @@ public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options)
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<AccountBalanceSnapshot> BalanceSnapshots => Set<AccountBalanceSnapshot>();
     public DbSet<SavingsItem> SavingsItems => Set<SavingsItem>();
+    public DbSet<SavingsItemDrawdown> Drawdowns => Set<SavingsItemDrawdown>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -16,12 +17,21 @@ public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options)
             entity.Property(x => x.TargetAmount).HasPrecision(18, 2);
             entity.Property(x => x.AllocatedAmount).HasPrecision(18, 2);
             entity.Property(x => x.Version).IsRowVersion();
+            entity.HasMany(x => x.Drawdowns).WithOne().HasForeignKey(x => x.SavingsItemId);
             entity.ToTable("SavingsItems", table =>
             {
                 table.HasCheckConstraint("CK_Items_Target", "[TargetAmount] > 0");
                 table.HasCheckConstraint("CK_Items_Allocation", "[AllocatedAmount] >= 0 AND [AllocatedAmount] <= [TargetAmount]");
                 table.HasCheckConstraint("CK_Items_Dates", "[TargetDate] >= [StartDate]");
             });
+        });
+        model.Entity<SavingsItemDrawdown>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Description).HasMaxLength(200);
+            entity.HasIndex(x => new { x.SavingsItemId, x.SpentOn, x.RecordedAtUtc, x.Id });
+            entity.ToTable("Drawdowns", table =>
+                table.HasCheckConstraint("CK_Drawdowns_Amount", "[Amount] > 0"));
         });
         model.Entity<Account>(entity =>
         {

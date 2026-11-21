@@ -163,7 +163,7 @@ public sealed class SavingsItemPageScenarios
     private sealed class ItemHandler(bool fail) : HttpMessageHandler
     {
         public static SavingsItemResponse Example { get; } = new(Guid.NewGuid(), "Example goal", SavingsTerm.Short,
-            100m, 25m, new(2027, 1, 1), new(2027, 4, 1), "AAAAAAAAAAA=");
+            100m, 25m, new(2027, 1, 1), new(2027, 4, 1), "AAAAAAAAAAA=") { AvailableAmount = 25m };
         public CreateSavingsItemRequest? Created { get; private set; }
         public UpdateAllocationRequest? Allocation { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)

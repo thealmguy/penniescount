@@ -11,6 +11,24 @@ public sealed class BudgetClient(HttpClient http)
     public Task<AccountResponse> UpdateBalanceAsync(Guid id, UpdateBalanceRequest request) =>
         SendAsync<AccountResponse>(HttpMethod.Put, $"api/accounts/{id}/balance", request);
     public Task<SavingsItemsResponse> GetItemsAsync() => SendAsync<SavingsItemsResponse>(HttpMethod.Get, "api/savings-items");
+    public Task<SavingsItemsResponse> GetRemovedItemsAsync() =>
+        SendAsync<SavingsItemsResponse>(HttpMethod.Get, "api/savings-items?removed=true");
+    public Task<SavingsDrawdownHistoryResponse> GetDrawdownsAsync(Guid id) =>
+        SendAsync<SavingsDrawdownHistoryResponse>(HttpMethod.Get, $"api/savings-items/{id}/drawdowns");
+    public Task<SavingsDrawdownResponse> SaveDrawdownAsync(Guid id, Guid? drawdownId, SaveDrawdownRequest request) =>
+        SendAsync<SavingsDrawdownResponse>(drawdownId.HasValue ? HttpMethod.Put : HttpMethod.Post,
+            $"api/savings-items/{id}/drawdowns" + (drawdownId.HasValue ? $"/{drawdownId}" : ""), request);
+    public Task<SavingsItemResponse> RemoveItemAsync(Guid id, ItemVersionRequest request) =>
+        SendAsync<SavingsItemResponse>(HttpMethod.Put, $"api/savings-items/{id}/removal", request);
+    public async Task DeleteDrawdownAsync(Guid id, Guid drawdownId, ItemVersionRequest body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/savings-items/{id}/drawdowns/{drawdownId}")
+        {
+            Content = JsonContent.Create(body)
+        };
+        using var response = await http.SendAsync(request);
+        await CheckResponseAsync(response);
+    }
     public Task<DashboardResponse> GetDashboardAsync() => SendAsync<DashboardResponse>(HttpMethod.Get, "api/dashboard");
     public Task<SavingsItemResponse> CreateItemAsync(CreateSavingsItemRequest request) =>
         SendAsync<SavingsItemResponse>(HttpMethod.Post, "api/savings-items", request);
@@ -22,19 +40,29 @@ public sealed class BudgetClient(HttpClient http)
         using var request = new HttpRequestMessage(method, path);
         if (body is not null) request.Content = JsonContent.Create(body, body.GetType());
         using var response = await http.SendAsync(request);
+        await CheckResponseAsync(response);
         try
         {
-            if (!response.IsSuccessStatusCode)
-            {
-                var problem = response.Content.Headers.ContentType?.MediaType == "application/problem+json"
-                    ? await response.Content.ReadFromJsonAsync<ApiProblem>() : null;
-                var message = problem?.Errors?.Count > 0
-                    ? string.Join(" ", problem.Errors.Values.SelectMany(x => x))
-                    : problem?.Title ?? $"API request failed ({(int)response.StatusCode}). Retry or reload the page.";
-                throw new ApiException(message);
-            }
             return await response.Content.ReadFromJsonAsync<T>()
                 ?? throw new ApiException("The API returned an empty response.");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new ApiException("The API returned an invalid response.");
+        }
+    }
+
+    private static async Task CheckResponseAsync(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode) return;
+        try
+        {
+            var problem = response.Content.Headers.ContentType?.MediaType == "application/problem+json"
+                ? await response.Content.ReadFromJsonAsync<ApiProblem>() : null;
+            var message = problem?.Errors?.Count > 0
+                ? string.Join(" ", problem.Errors.Values.SelectMany(x => x))
+                : problem?.Title ?? $"API request failed ({(int)response.StatusCode}). Retry or reload the page.";
+            throw new ApiException(message);
         }
         catch (System.Text.Json.JsonException)
         {

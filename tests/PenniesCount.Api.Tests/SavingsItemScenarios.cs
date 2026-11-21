@@ -24,7 +24,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
                 new UpdateAllocationRequest { AllocatedAmount = amount, Version = oldVersion });
             response.EnsureSuccessStatusCode();
             var updated = (await response.Content.ReadFromJsonAsync<SavingsItemResponse>())!;
-            Assert.Equal(item with { AllocatedAmount = amount, Version = updated.Version }, updated);
+            Assert.Equal(item with { AllocatedAmount = amount, AvailableAmount = amount, Version = updated.Version }, updated);
             item = updated;
             using var stale = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/allocation",
                 new UpdateAllocationRequest { AllocatedAmount = 50m, Version = oldVersion });
@@ -155,12 +155,16 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
                         INSERT INTO SavingsItems (Id, Name, Type, TargetAmount, AllocatedAmount, StartDate, TargetDate)
                         VALUES ({id}, {"Legacy example"}, {2}, {100m}, {25m}, {start}, {target})
                         """);
-                var before = (await db.SavingsItems.AsNoTracking().SingleAsync()).ToResponse(new(2027, 1, 15));
+                var before = await db.SavingsItems.AsNoTracking()
+                    .Select(x => new { x.Id, x.Name, x.TargetAmount, x.AllocatedAmount, x.StartDate, x.TargetDate, x.Version })
+                    .SingleAsync();
 
                 await migrator.MigrateAsync();
 
                 var after = (await db.SavingsItems.AsNoTracking().SingleAsync()).ToResponse(new(2027, 1, 15));
-                Assert.Equal(before, after);
+                Assert.Equal(before.Id, after.Id);
+                Assert.Equal(before.Name, after.Name);
+                Assert.Equal(Convert.ToBase64String(before.Version), after.Version);
                 Assert.Equal(SavingsTerm.Short, after.Type);
                 Assert.Equal(100m, after.TargetAmount);
                 Assert.Equal(25m, after.AllocatedAmount);

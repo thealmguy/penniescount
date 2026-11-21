@@ -99,6 +99,9 @@ namespace PenniesCount.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("IsRemoved")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -132,6 +135,39 @@ namespace PenniesCount.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("PenniesCount.Api.Data.SavingsItemDrawdown", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SavingsItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("SpentOn")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SavingsItemId", "SpentOn", "RecordedAtUtc", "Id");
+
+                    b.ToTable("Drawdowns", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Drawdowns_Amount", "[Amount] > 0");
+                        });
+                });
+
             modelBuilder.Entity("PenniesCount.Api.Data.AccountBalanceSnapshot", b =>
                 {
                     b.HasOne("PenniesCount.Api.Data.Account", null)
@@ -141,9 +177,23 @@ namespace PenniesCount.Api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PenniesCount.Api.Data.SavingsItemDrawdown", b =>
+                {
+                    b.HasOne("PenniesCount.Api.Data.SavingsItem", null)
+                        .WithMany("Drawdowns")
+                        .HasForeignKey("SavingsItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PenniesCount.Api.Data.Account", b =>
                 {
                     b.Navigation("History");
+                });
+
+            modelBuilder.Entity("PenniesCount.Api.Data.SavingsItem", b =>
+                {
+                    b.Navigation("Drawdowns");
                 });
 #pragma warning restore 612, 618
         }

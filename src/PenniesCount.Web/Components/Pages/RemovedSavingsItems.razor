@@ -1,0 +1,36 @@
+@page "/savings-items/removed"
+@rendermode InteractiveServer
+@inherits ApiPageBase
+
+<PageTitle>Removed savings items</PageTitle>
+<h1>Removed savings items</h1>
+<p>These items are read-only and excluded from all budget sums. Their funding and spending history is retained.</p>
+<a href="/">Back to budget</a>
+<button class="btn btn-outline-secondary ms-2" disabled="@Busy" @onclick="LoadAsync">Refresh removed items</button>
+@if (Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Error</div>
+    <p>Displayed items are from the last successful refresh.</p>
+}
+@if (_items is not null)
+{
+    @if (_items.Items.Length == 0)
+    {
+        <p>No removed items.</p>
+    }
+    else
+    {
+        <ul>
+            @foreach (var item in _items.Items)
+            {
+                <li><a href="@($"savings-items/{item.Id}")">@item.Name - view retained history</a></li>
+            }
+        </ul>
+    }
+}
+
+@code {
+    private SavingsItemsResponse? _items;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() => await PerformAsync(async () => _items = await Api.GetRemovedItemsAsync());
+}

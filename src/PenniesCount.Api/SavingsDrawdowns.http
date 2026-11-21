@@ -1,0 +1,72 @@
+@baseUrl = http://localhost:5100
+@itemId = REPLACE_WITH_ITEM_ID
+@drawdownId = REPLACE_WITH_DRAWDOWN_ID
+@version = REPLACE_WITH_LATEST_ITEM_VERSION
+
+### Create a fictional fully funded item (only against a disposable database)
+POST {{baseUrl}}/api/savings-items
+Content-Type: application/json
+
+{
+  "name": "Holiday example",
+  "targetAmount": 10000,
+  "allocatedAmount": 10000,
+  "startDate": "2026-01-01",
+  "targetDate": "2027-04-01"
+}
+
+### Active items
+GET {{baseUrl}}/api/savings-items
+
+### Item detail (also readable after removal)
+GET {{baseUrl}}/api/savings-items/{{itemId}}
+
+### History and current item version
+GET {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns
+
+### Record spending; reload history for the next item version
+POST {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns
+Content-Type: application/json
+
+{
+  "amount": 3000,
+  "spentOn": "2026-01-01",
+  "description": "Flights",
+  "version": "{{version}}"
+}
+
+### One drawdown
+GET {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns/{{drawdownId}}
+
+### Correct spending; use the latest item version
+PUT {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns/{{drawdownId}}
+Content-Type: application/json
+
+{
+  "amount": 2500,
+  "spentOn": "2026-01-01",
+  "description": "Corrected flights",
+  "version": "{{version}}"
+}
+
+### Delete spending, not the item; then reload history
+DELETE {{baseUrl}}/api/savings-items/{{itemId}}/drawdowns/{{drawdownId}}
+Content-Type: application/json
+
+{
+  "version": "{{version}}"
+}
+
+### Mark removed; separate from spending, no restore
+PUT {{baseUrl}}/api/savings-items/{{itemId}}/removal
+Content-Type: application/json
+
+{
+  "version": "{{version}}"
+}
+
+### Read-only removed items
+GET {{baseUrl}}/api/savings-items?removed=true
+
+### Missing item returns 404
+GET {{baseUrl}}/api/savings-items/00000000-0000-0000-0000-000000000000/drawdowns
