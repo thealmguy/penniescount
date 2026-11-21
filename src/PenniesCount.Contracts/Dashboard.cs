@@ -12,7 +12,14 @@ public sealed record SavingsGroupResponse(SavingsTerm Type, DashboardItemRespons
 
 public sealed record DashboardResponse(DateOnly AsOfDate, decimal TotalSavings, decimal TotalAllocated,
     decimal UnallocatedBalance, decimal? RequiredMonthlySavings, DateOnly? NextAllocationDate,
-    HolidayCalendarResponse HolidayCalendar, SavingsGroupResponse[] Groups);
+    HolidayCalendarResponse HolidayCalendar, SavingsGroupResponse[] Groups)
+{
+    public SavingsSummaryResponse[] Summaries { get; init; } = [];
+}
+
+/// <summary>Category totals, or grand totals when Type is null; funded amounts include drawdowns.</summary>
+public sealed record SavingsSummaryResponse(SavingsTerm? Type, decimal TargetAmount, decimal FundedAmount,
+    decimal DrawnDownAmount, decimal AvailableAmount, decimal? RequiredMonthlyContribution);
 
 public sealed record HolidayCalendarResponse(string Source, DateOnly? CoveredThrough,
     DateTimeOffset? LastSuccessfulRefreshUtc, bool IsStale, string? Warning);

@@ -26,6 +26,12 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         Assert.Equal(new DateOnly(2028, 12, 31), empty.HolidayCalendar.CoveredThrough);
         Assert.Equal(Enum.GetValues<SavingsTerm>(), empty.Groups.Select(x => x.Type));
         Assert.All(empty.Groups, group => Assert.Empty(group.Items));
+        Assert.Equal(5, empty.Summaries.Length);
+        Assert.All(empty.Summaries, summary =>
+        {
+            Assert.Equal(0m, summary.TargetAmount);
+            Assert.Equal(0m, summary.RequiredMonthlyContribution);
+        });
 
         var account = await AccountScenarios.CreateAsync(client, 50m);
         await AccountScenarios.CreateAsync(client, 100m);
@@ -61,6 +67,12 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         Assert.Equal(ContributionState.NeededNow, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Urgent example").Status);
         Assert.Equal(ContributionState.NotStarted, dashboard.Groups[0].Items.Single(x => x.Item.Name == "Future example").Status);
         Assert.Equal(dashboard.RequiredMonthlySavings, dashboard.Groups.SelectMany(x => x.Items).Sum(x => x.RequiredContribution));
+        var grandTotal = dashboard.Summaries.Single(x => x.Type is null);
+        Assert.Equal(600m, grandTotal.TargetAmount);
+        Assert.Equal(75m, grandTotal.FundedAmount);
+        Assert.Equal(0m, grandTotal.DrawnDownAmount);
+        Assert.Equal(dashboard.TotalAllocated, grandTotal.AvailableAmount);
+        Assert.Equal(dashboard.RequiredMonthlySavings, grandTotal.RequiredMonthlyContribution);
         Assert.All(dashboard.Groups, group => Assert.Equal(
             group.Items.OrderBy(x => x.Item.TargetDate).ThenBy(x => x.Item.Name).ThenBy(x => new SqlGuid(x.Item.Id)),
             group.Items));

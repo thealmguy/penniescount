@@ -13,7 +13,7 @@ public static class Display
         SavingsTerm.Short => "Short term",
         SavingsTerm.Medium => "Medium term",
         SavingsTerm.Long => "Long term",
-        SavingsTerm.Past => "Past savings goals",
+        SavingsTerm.Past => "Historic",
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
     public static string AccountTypeName(AccountType type) => type switch

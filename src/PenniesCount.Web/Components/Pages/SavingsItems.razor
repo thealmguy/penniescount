@@ -1,0 +1,32 @@
+@page "/savings-items"
+@rendermode InteractiveServer
+@inherits DatedApiPageBase
+
+<PageTitle>Savings items</PageTitle>
+<h1>Savings items</h1>
+<a class="btn btn-primary mb-3" href="savings-items/new">Add savings item</a>
+<a class="btn btn-outline-secondary mb-3" href="savings-items/removed">Removed items</a>
+<button class="btn btn-outline-secondary mb-3" disabled="@Busy" @onclick="LoadAsync">Refresh items</button>
+@if (Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Error</div>
+}
+@if (_budget is not null)
+{
+    <p>Budget date: <span id="budget-date">@_budget.AsOfDate.ToString("dd MMM yyyy")</span></p>
+    @if (Error is not null)
+    {
+        <p role="status">Displayed items are from the last successful refresh.</p>
+    }
+    <SavingsItemsList Groups="_budget.Groups" OnSaved="LoadAsync" />
+}
+else
+{
+    <p>@(Busy ? "Loading items..." : "Items have not loaded. Retry with Refresh items.")</p>
+}
+
+@code {
+    private DashboardResponse? _budget;
+    protected override DateOnly? AsOfDate => _budget?.AsOfDate;
+    protected override async Task LoadAsync() => await PerformAsync(async () => _budget = await Api.GetDashboardAsync());
+}

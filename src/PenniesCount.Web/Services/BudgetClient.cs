@@ -25,6 +25,7 @@ public sealed class BudgetClient(HttpClient http)
     public Task<SavingsItemResponse> RemoveItemAsync(Guid id, ItemVersionRequest request) =>
         SendAsync<SavingsItemResponse>(HttpMethod.Put, $"api/savings-items/{id}/removal", request);
     public Task<DashboardResponse> GetDashboardAsync() => SendAsync<DashboardResponse>(HttpMethod.Get, "api/dashboard");
+    public Task<FutureLookResponse> GetFutureLookAsync() => SendAsync<FutureLookResponse>(HttpMethod.Get, "api/future-look");
     public Task<SavingsItemResponse> CreateItemAsync(CreateSavingsItemRequest request) =>
         SendAsync<SavingsItemResponse>(HttpMethod.Post, "api/savings-items", request);
     public Task<SavingsItemResponse> UpdateAllocationAsync(Guid id, UpdateAllocationRequest request) =>

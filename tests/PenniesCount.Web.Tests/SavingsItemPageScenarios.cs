@@ -36,7 +36,7 @@ public sealed class SavingsItemPageScenarios
             Assert.Equal(new DateOnly(2027, 1, 1), handler.Created.StartDate);
             Assert.Equal(new DateOnly(2027, 4, 1), handler.Created.TargetDate);
             Assert.Equal(25m, handler.Created.AllocatedAmount);
-            Assert.Equal("http://localhost/", context.Services.GetRequiredService<NavigationManager>().Uri);
+            Assert.Equal("http://localhost/savings-items", context.Services.GetRequiredService<NavigationManager>().Uri);
         });
     }
 
@@ -54,8 +54,8 @@ public sealed class SavingsItemPageScenarios
             .Add(x => x.Groups, [new(SavingsTerm.Past,
                 [new(ItemHandler.Example with { Type = SavingsTerm.Past }, 75m, 75m, 0, ContributionState.NeededNow)])])
             .Add(x => x.OnSaved, () => notified = true));
-        Assert.Equal("Past savings goals", page.Find("h2").TextContent);
-        Assert.Single(page.FindAll("section[aria-label='Past savings goals']"));
+        Assert.Equal("Historic", page.Find("h2").TextContent);
+        Assert.Single(page.FindAll("section[aria-label='Historic']"));
         Assert.Contains("Needed now", page.Markup);
         page.Find("button").Click();
         var modal = page.Find("dialog");

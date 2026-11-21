@@ -13,7 +13,7 @@
         <h2>@category</h2>
         @if (group.Items.Length == 0)
         {
-            <p>@(group.Type == SavingsTerm.Past ? "No past savings goals." : $"No {category.ToLowerInvariant()} items.")</p>
+            <p>@(group.Type == SavingsTerm.Past ? "No historic savings goals." : $"No {category.ToLowerInvariant()} items.")</p>
         }
         else
         {

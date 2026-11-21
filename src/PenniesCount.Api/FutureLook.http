@@ -1,0 +1,4 @@
+@baseUrl = http://localhost:5100
+
+### Read the 24-month allocation projection
+GET {{baseUrl}}/api/future-look

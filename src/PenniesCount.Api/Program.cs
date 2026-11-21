@@ -30,6 +30,7 @@ app.MapSavingsItems();
 app.MapSavingsDrawdowns();
 app.MapSavingsLedger();
 app.MapDashboard();
+app.MapFutureLook();
 
 app.Run();
 

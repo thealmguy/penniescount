@@ -1,0 +1,137 @@
+@page "/future-look"
+@rendermode InteractiveServer
+@inherits DatedApiPageBase
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<PageTitle>Future look</PageTitle>
+<h1>Future look</h1>
+<p>Projected monthly funding for existing goals, starting with the current month. <a href="about">About the forecast</a>.</p>
+<button class="btn btn-outline-secondary mb-3" disabled="@Busy" @onclick="LoadAsync">Refresh forecast</button>
+@if (Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Error</div>
+}
+@if (_forecast is not null)
+{
+    <p>Forecast date: <span id="forecast-date">@_forecast.AsOfDate.ToString("dd MMM yyyy")</span></p>
+    @if (Error is not null)
+    {
+        <p role="status">Displayed values are from the last successful refresh.</p>
+    }
+    @if (_forecast.HolidayCalendar.Warning is not null || _forecast.HolidayCalendar.IsStale)
+    {
+        <div class="alert alert-warning" role="status">@(_forecast.HolidayCalendar.Warning ?? "Holiday data may be out of date. Estimates use weekdays where coverage is unavailable.")</div>
+    }
+    @if (_forecast.HolidayCalendar.CoveredThrough is not { } coveredThrough
+        || coveredThrough < _forecast.Months[^1].Month.AddMonths(1).AddDays(-1))
+    {
+        <p role="status">Some future months lack bank-holiday coverage. Their allocation dates use weekdays only and may change.</p>
+    }
+    @if (_forecast.NeededNow.Length > 0)
+    {
+        <div class="alert alert-warning" role="status">
+            <h2>Needed now</h2>
+            <p>These goals have no feasible allocation dates through their deadline. Their full funding remainder is included in this month.</p>
+            <ul>
+                @foreach (var item in _forecast.NeededNow)
+                {
+                    <li>@item.Name: @Display.Money(item.Amount)</li>
+                }
+            </ul>
+        </div>
+    }
+    <div class="forecast-chart-container" role="img" aria-label="Stacked bar chart of monthly savings funding needs. Exact values are available in the table below.">
+        <canvas @ref="_canvas" aria-hidden="true"></canvas>
+    </div>
+    @if (_chartError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_chartError The complete monthly values remain available in the table.</div>
+    }
+    <h2>Monthly forecast values</h2>
+    <div class="table-responsive">
+        <table class="table" id="forecast-values">
+            <caption>Projected allocation amounts by calendar month and current savings category.</caption>
+            <thead>
+                <tr><th scope="col">Month</th>
+                    @foreach (var category in _forecast.Months[0].Categories)
+                    {
+                        <th scope="col">@Display.SavingsCategoryName(category.Type)</th>
+                    }
+                    <th scope="col">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var month in _forecast.Months)
+                {
+                    <tr @key="month.Month">
+                        <th scope="row">@month.Month.ToString("MMMM yyyy")</th>
+                        @foreach (var category in month.Categories)
+                        {
+                            <td>@Display.Money(category.Amount)</td>
+                        }
+                        <td>@Display.Money(month.Total)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <p>@(Busy ? "Loading forecast..." : "Forecast has not loaded. Retry with Refresh forecast.")</p>
+}
+
+@code {
+    private FutureLookResponse? _forecast;
+    private ElementReference _canvas;
+    private IJSObjectReference? _module;
+    private DateOnly? _renderedDate;
+    private string? _chartError;
+    protected override DateOnly? AsOfDate => _forecast?.AsOfDate;
+
+    protected override async Task LoadAsync()
+    {
+        if (await PerformAsync(async () => _forecast = await Api.GetFutureLookAsync()))
+        {
+            _chartError = null;
+            _renderedDate = null;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (_forecast is null || _forecast.AsOfDate == _renderedDate) return;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/FutureLook.razor.js");
+            var labels = _forecast.Months.Select(x => x.Month.ToString("MMM yyyy")).ToArray();
+            var values = _forecast.Months.Select(x => x.Categories.Select(y => (double)y.Amount).ToArray()).ToArray();
+            var exact = _forecast.Months.Select(x => x.Categories.Select(y => Display.Money(y.Amount)).ToArray()).ToArray();
+            var totals = _forecast.Months.Select(x => Display.Money(x.Total)).ToArray();
+            await _module.InvokeVoidAsync("render", _canvas, labels, values, exact, totals);
+            _renderedDate = _forecast.AsOfDate;
+        }
+        catch (JSException)
+        {
+            _chartError = "The interactive chart could not be loaded.";
+            _renderedDate = _forecast.AsOfDate;
+            StateHasChanged();
+        }
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("dispose", _canvas);
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
+        await base.DisposeAsync();
+    }
+}

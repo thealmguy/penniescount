@@ -63,44 +63,15 @@ public sealed class HomeScenarios
     }
 
     [Fact]
-    public void Given_a_budget_When_an_allocation_is_saved_Then_the_homepage_refreshes_overview_figures()
+    public void Given_a_budget_When_opening_home_Then_it_shows_category_totals_and_links_to_item_management()
     {
-        var allocated = false;
-        using var context = CreateContext(new ReplyHandler(request =>
-        {
-            if (request.Method == HttpMethod.Put)
-            {
-                allocated = true;
-                return Json(Example with { AllocatedAmount = 100m, AvailableAmount = 100m });
-            }
-            return Json(allocated
-                ? Budget(new(2027, 1, 15), 0m) with
-                {
-                    TotalAllocated = 100m, UnallocatedBalance = 0m,
-                    Groups = [new(SavingsTerm.Short,
-                        [new(Example with { AllocatedAmount = 100m, AvailableAmount = 100m }, 0m, 0m, 0, ContributionState.Funded)])]
-                }
-                : Budget(new(2027, 1, 15), 25m));
-        }), TimeProvider.System);
+        using var context = CreateContext(new ReplyHandler(_ => Json(Budget(new(2027, 1, 15), 25m))), TimeProvider.System);
         var page = context.Render<Home>();
-        page.WaitForAssertion(() => Assert.Contains("25.00", page.Find("#total-allocated").TextContent));
-        page.FindAll("button").Single(x => x.TextContent == "Update allocation").Click();
-        page.Find("#allocated-total").Change("100");
-
-        page.Find("form").Submit();
-
-        page.WaitForAssertion(() =>
-        {
-            Assert.Empty(page.FindAll("form"));
-            Assert.Contains("100.00", page.Find("#total-allocated").TextContent);
-            Assert.Contains("0.00", page.Find("#unallocated").TextContent);
-            Assert.Contains("0.00", page.Find("#monthly-required").TextContent);
-            var cells = page.FindAll("tbody td");
-            Assert.Contains("100.00", cells[2].TextContent);
-            Assert.Contains("100.00", cells[4].TextContent);
-            Assert.Contains("0.00", cells[5].TextContent);
-            Assert.Contains("Fully allocated", cells[9].TextContent);
-        });
+        page.WaitForAssertion(() => Assert.Equal(5, page.FindAll("#savings-totals tbody tr").Count));
+        Assert.Equal("Historic", page.Find("#savings-totals tbody tr[data-category='Past'] th").TextContent);
+        Assert.Contains("100.00", page.Find("#savings-totals tbody tr[data-category='Short'] td").TextContent);
+        Assert.Contains("View savings items", page.Markup);
+        Assert.DoesNotContain("Update allocation", page.Markup);
     }
 
     [Fact]
@@ -137,16 +108,13 @@ public sealed class HomeScenarios
         {
             Assert.Contains("25.00", page.Find("#monthly-required").TextContent);
             Assert.Equal("01 Feb 2027", page.Find("#next-allocation-date").TextContent);
-            Assert.Contains("the estimate uses the first weekday of the month", page.Markup);
             Assert.Contains("The official holiday calendar is unavailable.", page.Markup);
-            Assert.Contains("GOV.UK bank holidays (England and Wales)", page.Find("#holiday-calendar-source").TextContent);
-            Assert.Contains("Unavailable", page.Find("#holiday-calendar-source").TextContent);
-            Assert.Contains("Monthly", page.Find("tbody").TextContent);
+            Assert.Contains("25.00", page.Find("#savings-totals").TextContent);
         });
     }
 
     [Fact]
-    public void Given_a_goal_due_today_When_the_date_rolls_over_Then_home_renders_the_refreshed_past_group()
+    public void Given_a_goal_deadline_passes_When_the_date_rolls_over_Then_home_refreshes_its_category_summary()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2027, 4, 15, 23, 59, 45, TimeSpan.Zero));
         using var context = CreateContext(new ReplyHandler(_ =>
@@ -154,23 +122,20 @@ public sealed class HomeScenarios
             var date = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
             var type = date.Day == 15 ? SavingsTerm.Short : SavingsTerm.Past;
             var row = new DashboardItemResponse(Example with { Type = type }, 75m, 75m, 0, ContributionState.NeededNow);
-            return Json(Budget(date, 75m) with
-            {
-                Groups = Enum.GetValues<SavingsTerm>().Select(category =>
-                    new SavingsGroupResponse(category, category == type ? [row] : [])).ToArray()
-            });
+            var groups = Enum.GetValues<SavingsTerm>().Select(category =>
+                new SavingsGroupResponse(category, category == type ? [row] : [])).ToArray();
+            return Json(Budget(date, 75m) with { Groups = groups, Summaries = Summaries(groups, 75m) });
         }), clock);
         var page = context.Render<Home>();
-        page.WaitForAssertion(() => Assert.Contains("Example goal", page.Find("section[aria-label='Short term savings']").TextContent));
-        Assert.DoesNotContain("Example goal", page.Find("section[aria-label='Past savings goals']").TextContent);
+        page.WaitForAssertion(() => Assert.Contains("100.00", page.Find("#savings-totals tbody tr[data-category='Short']").TextContent));
 
         clock.Advance(TimeSpan.FromSeconds(30));
 
         page.WaitForAssertion(() =>
         {
             Assert.Equal("16 Apr 2027", page.Find("#budget-date").TextContent);
-            Assert.Contains("Example goal", page.Find("section[aria-label='Past savings goals']").TextContent);
-            Assert.DoesNotContain("Example goal", page.Find("section[aria-label='Short term savings']").TextContent);
+            Assert.Contains("Historic", page.Find("#savings-totals tbody tr[data-category='Past'] th").TextContent);
+            Assert.Contains("75.00", page.Find("#savings-totals tbody tr[data-category='Past']").TextContent);
             Assert.Contains("75.00", page.Find("#monthly-required").TextContent);
         });
     }
@@ -182,7 +147,7 @@ public sealed class HomeScenarios
             {
                 Content = JsonContent.Create(new DashboardResponse(new(2027, 1, 15), 0m, 0m, 0m, 0m,
                     new(2027, 2, 1), CurrentHolidays,
-                    [new(SavingsTerm.Short, []), new(SavingsTerm.Medium, []), new(SavingsTerm.Long, [])]))
+                                [new(SavingsTerm.Short, []), new(SavingsTerm.Medium, []), new(SavingsTerm.Long, []), new(SavingsTerm.Past, [])]))
             });
     }
 
@@ -193,10 +158,29 @@ public sealed class HomeScenarios
         "GOV.UK bank holidays (England and Wales)", new(2028, 12, 31),
         new(2027, 1, 1, 0, 0, 0, TimeSpan.Zero), false, null);
 
-    private static DashboardResponse Budget(DateOnly date, decimal monthly) => new(date, 100m, 25m, 75m, monthly,
-        new DateOnly(date.Year, date.Month, 1).AddMonths(1), CurrentHolidays,
-        [new(SavingsTerm.Short, [new(Example, 75m, monthly, 3, ContributionState.Scheduled)]),
-            new(SavingsTerm.Medium, []), new(SavingsTerm.Long, [])]);
+    private static DashboardResponse Budget(DateOnly date, decimal monthly)
+    {
+        var groups = new[]
+        {
+            new SavingsGroupResponse(SavingsTerm.Short, [new DashboardItemResponse(Example, 75m, monthly, 3, ContributionState.Scheduled)]),
+            new SavingsGroupResponse(SavingsTerm.Medium, []),
+            new SavingsGroupResponse(SavingsTerm.Long, []),
+            new SavingsGroupResponse(SavingsTerm.Past, [])
+        };
+        return new(date, 100m, 25m, 75m, monthly,
+            new DateOnly(date.Year, date.Month, 1).AddMonths(1), CurrentHolidays, groups)
+        { Summaries = Summaries(groups, monthly) };
+    }
+
+    private static SavingsSummaryResponse[] Summaries(SavingsGroupResponse[] groups, decimal monthly)
+    {
+        var summaries = groups.Select(x => new SavingsSummaryResponse(x.Type, x.Items.Sum(y => y.Item.TargetAmount),
+            x.Items.Sum(y => y.Item.AllocatedAmount), x.Items.Sum(y => y.Item.DrawnDownAmount),
+            x.Items.Sum(y => y.Item.AvailableAmount), x.Items.Sum(y => y.RequiredContribution)))
+            .Append(new(null, Example.TargetAmount, Example.AllocatedAmount, Example.DrawnDownAmount,
+                Example.AvailableAmount, monthly)).ToArray();
+        return summaries;
+    }
 
     private static HttpResponseMessage Json<T>(T value) => new(HttpStatusCode.OK) { Content = JsonContent.Create(value) };
 

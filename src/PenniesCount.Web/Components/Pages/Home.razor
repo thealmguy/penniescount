@@ -1,16 +1,14 @@
 ﻿@page "/"
 
 @rendermode InteractiveServer
-@inherits ApiPageBase
-@implements IAsyncDisposable
-@inject TimeProvider Clock
+@inherits DatedApiPageBase
 
 <PageTitle>Savings budget</PageTitle>
 
 <h1>Savings budget</h1>
 <p>Plan what your savings are for.</p>
 <a class="btn btn-primary mb-3" href="savings-items/new">Add savings item</a>
-<a class="btn btn-outline-secondary mb-3" href="savings-items/removed">Removed items</a>
+<a class="btn btn-outline-secondary mb-3" href="savings-items">View savings items</a>
 <button class="btn btn-outline-secondary mb-3" disabled="@Busy" @onclick="LoadAsync">Refresh budget</button>
 @if (Error is not null)
 {
@@ -34,18 +32,7 @@
             </div>
             <div class="col-sm-6 col-xl-3"><dt>Required monthly savings</dt><dd id="monthly-required">@Display.Money(_budget.RequiredMonthlySavings)</dd></div>
         </dl>
-        <p>Allocations are scheduled for the first working day of each month, skipping weekends and known England-and-Wales bank holidays.
-            Without holiday coverage, the estimate uses the first weekday of the month and may change when data becomes available.
-            The next allocation date is
-            <span id="next-allocation-date">@(_budget.NextAllocationDate?.ToString("dd MMM yyyy") ?? "Unavailable")</span>.
-            Today's date is excluded only for items with a payment recorded today. Items not yet started contribute zero.
-            Recommendations round upward to the nearest penny.</p>
-        <p id="holiday-calendar-source">
-            Holiday data source: @_budget.HolidayCalendar.Source.
-            Coverage through: @(_budget.HolidayCalendar.CoveredThrough?.ToString("dd MMM yyyy") ?? "Unavailable").
-            Last successful refresh:
-            @(_budget.HolidayCalendar.LastSuccessfulRefreshUtc?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Unavailable").
-        </p>
+        <p>Next allocation date: <span id="next-allocation-date">@(_budget.NextAllocationDate?.ToString("dd MMM yyyy") ?? "Unavailable")</span>.</p>
         @if (_budget.HolidayCalendar.Warning is not null)
         {
             <div class="alert alert-warning" role="status">@_budget.HolidayCalendar.Warning</div>
@@ -54,15 +41,35 @@
         {
             <div class="alert alert-warning" role="status">Holiday data may be out of date.</div>
         }
-        <p>Total allocated is the amount still available to spend on active items. Drawdowns do not update accounts:
-            apparent spare funds may be temporary until you manually submit the new account balances.</p>
         @if (_budget.Groups.SelectMany(x => x.Items).Any(x => x.Status == ContributionState.NeededNow))
         {
             <div class="alert alert-warning" role="status">Some items need funds before the next monthly payment, or are overdue.
-                Their full remainder is included in Required monthly savings and marked Needed now below.</div>
+                Their full remainder is included in Required monthly savings. <a href="savings-items">View savings items</a>.</div>
         }
     </section>
-    <SavingsItemsList Groups="_budget.Groups" OnSaved="LoadAsync" />
+    <section aria-label="Savings category totals">
+        <h2>Savings totals</h2>
+        <div class="table-responsive">
+            <table class="table" id="savings-totals">
+                <thead><tr><th scope="col">Category</th><th scope="col">Target</th><th scope="col">Funded allocation</th><th scope="col">Drawn down</th><th scope="col">Available to spend</th><th scope="col">Required monthly contribution</th></tr></thead>
+                <tbody>
+                    @foreach (var summary in _budget.Summaries)
+                    {
+                        <tr data-category="@(summary.Type?.ToString() ?? "GrandTotal")" class="@(summary.Type is null ? "fw-bold" : "")">
+                            <th scope="row">@(summary.Type is { } type ? Display.SavingsCategoryName(type) : "Grand total")</th>
+                            <td>@Display.Money(summary.TargetAmount)</td><td>@Display.Money(summary.FundedAmount)</td>
+                            <td>@Display.Money(summary.DrawnDownAmount)</td><td>@Display.Money(summary.AvailableAmount)</td>
+                            <td>@Display.Money(summary.RequiredMonthlyContribution)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_budget.Groups.All(x => x.Items.Length == 0))
+        {
+            <p>No savings items yet. Add your first item to start planning.</p>
+        }
+    </section>
 }
 else
 {
@@ -71,46 +78,6 @@ else
 
 @code {
     private DashboardResponse? _budget;
-    private readonly CancellationTokenSource _stopping = new();
-    private PeriodicTimer? _timer;
-    private Task? _watch;
-    protected override Task OnInitializedAsync() => LoadAsync();
-    private async Task LoadAsync() => await PerformAsync(async () => _budget = await Api.GetDashboardAsync());
-
-    protected override Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            _timer = new PeriodicTimer(TimeSpan.FromSeconds(30), Clock);
-            _watch = WatchDateAsync(_timer);
-        }
-        return Task.CompletedTask;
-    }
-
-    private async Task WatchDateAsync(PeriodicTimer timer)
-    {
-        try
-        {
-            while (await timer.WaitForNextTickAsync(_stopping.Token))
-            {
-                await InvokeAsync(async () =>
-                {
-                    if (_budget is not null && DateOnly.FromDateTime(Clock.GetLocalNow().DateTime) != _budget.AsOfDate)
-                    {
-                        await LoadAsync();
-                        StateHasChanged();
-                    }
-                });
-            }
-        }
-        catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _stopping.CancelAsync();
-        _timer?.Dispose();
-        if (_watch is not null) await _watch;
-        _stopping.Dispose();
-    }
+    protected override DateOnly? AsOfDate => _budget?.AsOfDate;
+    protected override async Task LoadAsync() => await PerformAsync(async () => _budget = await Api.GetDashboardAsync());
 }

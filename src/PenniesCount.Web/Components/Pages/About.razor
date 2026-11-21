@@ -1,0 +1,66 @@
+@page "/about"
+@rendermode InteractiveServer
+@inherits ApiPageBase
+
+<PageTitle>About PenniesCount</PageTitle>
+<h1>About PenniesCount</h1>
+<h2>Budget calculations</h2>
+<p>Total savings is the sum of current account balances. Headline Total allocated is the amount still available to spend on non-removed items.
+    Unallocated is total savings minus this available allocation: positive means spare funds; negative means over-allocation.</p>
+<p>Category Funded allocation is total funding to date, including money already drawn down.
+    Available to spend is funded allocation minus drawdowns. Funding remaining is target minus funded allocation.
+    Required monthly contribution is the recommendation for the next payment, not the whole funding remainder.</p>
+<p>Drawdowns do not update accounts: apparent spare funds may be temporary until you manually submit the new account balances.
+    Drawdowns do not create another funding requirement. Removed items are excluded from all budget and forecast totals.</p>
+<h2>Allocation dates and bank holidays</h2>
+<p>Allocations are scheduled for the first working day of each month, skipping weekends and known England-and-Wales bank holidays.
+    Without holiday coverage, the estimate uses the first weekday of the month and may change when data becomes available.
+    Today's date is excluded only for items with an effective allocation payment recorded today; reversed payments do not count.</p>
+<p>Active items spread their funding remainder over remaining allocation dates through the inclusive save-by deadline.
+    Items not yet started contribute zero to today's monthly recommendation. Fully funded items need no further contribution.
+    With no allocation dates remaining, the full funding remainder is Needed now, including underfunded historic goals.
+    Recommendations round upward to the nearest penny; the headline monthly total sums these recommendations.</p>
+<h2>Categories</h2>
+<p>Categories use the API's local budget date and the save-by deadline: Short term is less than one calendar year away,
+    Medium term is one through five years away, Long term is more than five years away, and Historic means a deadline before today.</p>
+<h2>Future look</h2>
+<p>The chart projects the current month and the following 23 months. Each goal keeps its category as of the forecast date.
+    Funding is spread over all eligible dates through its deadline, even when the deadline is beyond the chart.
+    Future-start goals are included from the first eligible allocation date on or after their start date.</p>
+<p>Monthly payments round up to pennies and are capped at the outstanding projected remainder, so the final payment may be smaller.
+    Goals with no feasible allocation date are included in the current month and flagged for immediate attention, even if their start date is in the future.
+    This means the forecast can differ from today's Required monthly savings.</p>
+<p>This is a read-only plan assuming those payments are made, not a payment instruction or an account transfer.
+    It does not predict interest, inflation, income, or new goals. Refresh after changes; date-sensitive pages also check for local date changes every 30 seconds.</p>
+<h2>Holiday calendar status</h2>
+<button class="btn btn-outline-secondary mb-3" disabled="@Busy" @onclick="LoadAsync">Refresh calendar status</button>
+@if (Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Error</div>
+    @if (_holidays is not null)
+    {
+        <p role="status">Displayed calendar status is from the last successful refresh.</p>
+    }
+}
+@if (_holidays is not null)
+{
+    <p id="holiday-calendar-source">
+        Holiday data source: @_holidays.Source.
+        Coverage through: @(_holidays.CoveredThrough?.ToString("dd MMM yyyy") ?? "Unavailable").
+        Last successful refresh: @(_holidays.LastSuccessfulRefreshUtc?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Unavailable").
+    </p>
+    @if (_holidays.Warning is not null || _holidays.IsStale)
+    {
+        <div class="alert alert-warning" role="status">@(_holidays.Warning ?? "Holiday data may be out of date.")</div>
+    }
+}
+else
+{
+    <p>@(Busy ? "Loading calendar status..." : "Calendar status has not loaded. Retry with Refresh calendar status.")</p>
+}
+
+@code {
+    private HolidayCalendarResponse? _holidays;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() => await PerformAsync(async () => _holidays = (await Api.GetDashboardAsync()).HolidayCalendar);
+}

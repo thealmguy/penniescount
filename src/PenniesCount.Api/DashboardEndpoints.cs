@@ -1,5 +1,3 @@
-using System.Data;
-using Microsoft.EntityFrameworkCore;
 using PenniesCount.Api.Data;
 using PenniesCount.Api.Holidays;
 using PenniesCount.Contracts;
@@ -13,20 +11,12 @@ internal static class DashboardEndpoints
         app.MapGet("/api/dashboard", async (SavingsDbContext db, TimeProvider clock,
             IBankHolidayProvider holidayProvider, CancellationToken ct) =>
         {
-            var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
-            var holidayStatus = await holidayProvider.GetStatusAsync(ct);
-            var schedule = holidayStatus.Calendar is { } calendar
-                ? new WorkingDaySchedule(calendar.CoveredFrom, calendar.CoveredThrough, calendar.Holidays)
-                : WorkingDaySchedule.WeekdaysOnly;
+            var snapshot = await BudgetSnapshot.LoadAsync(db, clock, holidayProvider, ct);
+            var asOf = snapshot.AsOf;
+            var schedule = snapshot.Schedule;
             var calculator = new BudgetCalculator(schedule);
             var nextAllocationDate = schedule.NextAllocationDate(asOf);
-            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-            var balances = await db.Accounts.AsNoTracking().Select(x => x.TotalFunds).ToListAsync(ct);
-            var storedItems = await db.SavingsItems.AsNoTracking().Include(x => x.Entries)
-                .Where(x => !x.IsRemoved).OrderBy(x => x.TargetDate)
-                .ThenBy(x => x.Name).ThenBy(x => x.Id).ToListAsync(ct);
-            await transaction.CommitAsync(ct);
-            var itemRows = storedItems.Select(x => (Entity: x, Response: x.ToResponse(asOf))).ToArray();
+            var itemRows = snapshot.Items.Select(x => (Entity: x, Response: x.ToResponse(asOf))).ToArray();
             var items = itemRows.Select(x => x.Response).ToArray();
             var groups = Enum.GetValues<SavingsTerm>().Select(type => new SavingsGroupResponse(type,
                 itemRows.Where(x => x.Response.Type == type).Select(row =>
@@ -47,16 +37,27 @@ internal static class DashboardEndpoints
                     return new DashboardItemResponse(item, item.TargetAmount - item.AllocatedAmount,
                         contribution.RequiredAmount, contribution.RemainingPayments, status) { PaidToday = paidToday };
                 }).ToArray())).ToArray();
-            var savings = balances.Sum();
+            var savings = snapshot.Savings;
             var allocated = items.Sum(x => x.AvailableAmount);
             var contributions = groups.SelectMany(x => x.Items).Select(x => x.RequiredContribution).ToArray();
             decimal? requiredMonthlySavings = contributions.All(x => x.HasValue)
                 ? contributions.Sum(x => x.GetValueOrDefault())
                 : null;
-            var holidayResponse = new HolidayCalendarResponse(HolidayCalendarStatus.Source,
-                holidayStatus.Calendar?.CoveredThrough, holidayStatus.LastSuccessfulRefreshUtc,
-                holidayStatus.IsStale, holidayStatus.Warning);
             return new DashboardResponse(asOf, savings, allocated, savings - allocated,
-                requiredMonthlySavings, nextAllocationDate, holidayResponse, groups);
+                requiredMonthlySavings, nextAllocationDate, snapshot.Holidays, groups)
+            {
+                Summaries = Summarize(groups)
+            };
         });
+
+    internal static SavingsSummaryResponse[] Summarize(SavingsGroupResponse[] groups)
+    {
+        SavingsSummaryResponse Total(SavingsTerm? type, DashboardItemResponse[] rows) =>
+            new(type, rows.Sum(x => x.Item.TargetAmount), rows.Sum(x => x.Item.AllocatedAmount),
+                rows.Sum(x => x.Item.DrawnDownAmount), rows.Sum(x => x.Item.AvailableAmount),
+                rows.All(x => x.RequiredContribution.HasValue) ? rows.Sum(x => x.RequiredContribution) : null);
+        return [.. Enum.GetValues<SavingsTerm>().Select(type =>
+            Total(type, groups.Where(x => x.Type == type).SelectMany(x => x.Items).ToArray())),
+            Total(null, groups.SelectMany(x => x.Items).ToArray())];
+    }
 }

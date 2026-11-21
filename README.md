@@ -35,6 +35,15 @@ Open `http://localhost:5101`. The API listens at `http://localhost:5100`.
 This development setup uses HTTP on loopback, not a production hosting setup.
 No financial demo data is seeded.
 
+The left menu links to **Savings budget**, **Savings items**, **Future look**,
+**Savings accounts** and **About**. The homepage retains the headline totals and
+shows category totals for Short term, Medium term, Long term, Historic and the
+grand total: target, funded allocation, drawdowns, available funds and required
+monthly contribution. The summary's funded allocation includes drawdowns;
+the headline Total allocated instead means funds still available to spend.
+Savings items contains the editable allocation tables and removed items; About
+explains the calculation and bank-holiday rules.
+
 ## Verify
 
 ```powershell
@@ -76,7 +85,9 @@ or writes ledger entries. It requires 100% and excludes logging
 calls/logger category names and database-generated/default entity initializers
 from mutation, not financial logic. It runs four test sessions in parallel,
 each against its own LocalDB databases, and takes several minutes. Its character spans isolate changed logic
-in existing files; update those spans when that code moves. Both configurations use local reports
+in existing files; update those spans when that code moves. The forecast endpoint's
+non-financial OpenAPI name and description strings are outside its mutation span.
+Both configurations use local reports
 only; no code or reports are uploaded.
 
 The committed Stryker configuration uses the Complete mutation level and
@@ -85,8 +96,8 @@ surviving mutants, then rerun mutation testing and the full test suite before
 committing and pushing a green iteration. Local reports are written under
 `StrykerOutput` and are not committed.
 
-Use fictional data for testing. Workbook imports, charts, deployment and
-authentication are intentionally outside this first pass.
+Use fictional data for testing. Workbook imports, deployment and authentication
+are intentionally outside this first pass.
 
 Licensed under [MIT](LICENSE).
 
@@ -107,7 +118,7 @@ calendar date, so they change as deadlines draw nearer:
 - **Short term:** today through less than one calendar year away.
 - **Medium term:** one through five calendar years away, including both boundaries.
 - **Long term:** more than five calendar years away.
-- **Past savings goals:** any save-by date before today, whether fully allocated or not.
+- **Historic:** any save-by date before today, whether fully allocated or not.
 
 Calendar-year anniversaries use 28 February for a leap-day date in non-leap years.
 There is no manual category selection or persisted category. Apply the latest
@@ -207,7 +218,7 @@ reapplying a migration.
   allocated items require zero.
 - If no payment date remains, the full remainder is **needed now** and included
   in the monthly total with a warning, including due/overdue items.
-- Past savings goals remain in allocation and contribution totals. Their
+- Historic goals remain in allocation and contribution totals. Their
   underfunded remainder is still needed now; fully allocated past goals require zero.
 - Removed items contribute nothing to allocations or recommendations, regardless
   of dates or funding state. Drawdowns do not create a new funding requirement.
@@ -217,11 +228,28 @@ reapplying a migration.
   The next allocation date, item contributions and overall monthly total remain
   available. Estimates may change when holiday data for those months becomes available.
 
-The API uses one host-local calendar date per dashboard or savings-item request
-for all derived categories and calculations. History
-timestamps use UTC. Refresh after writes or external changes; the open homepage
-also checks for a local date change every 30 seconds. Financial calculations
-are not persisted or performed in the UI.
+The **Future look** page projects 24 calendar months, starting with the current
+month, with stacked Short, Medium, Long and Historic allocation bars. The
+interactive Chart.js tooltip shows all four GBP amounts and the monthly total;
+an accessible table provides exact figures. Its read-only forecast includes
+future-start goals from their first eligible allocation date, spreads funding
+over all remaining eligible dates through each goal's deadline (including
+dates beyond the chart), rounds payments up to pennies and caps the final
+payment at the amount still required. Goals with no eligible date through
+their deadline show their full remainder in the current month as **Needed now**.
+This forecast rule can differ from today's monthly recommendation, which
+remains zero for goals that have not started. It assumes no interest, inflation,
+income, new goals or future recorded payments. Forecast figures are not
+automatically recorded in the savings ledger.
+Chart.js 4.6.1 is hosted locally under `src/PenniesCount.Web/wwwroot/lib/chart.js`;
+its MIT licence is included alongside the distribution. No financial data is
+sent to a third-party chart service.
+
+The API uses one host-local calendar date per dashboard, forecast or savings-item
+request for all derived categories and calculations. History timestamps use UTC.
+Refresh after writes or external changes; the open homepage, Savings items and
+Future look also check for a local date change every 30 seconds. Financial
+calculations are not persisted or performed in the UI.
 
 The holiday provider validates and caches the England-and-Wales list from
 [GOV.UK](https://www.gov.uk/bank-holidays.json). A year is treated as complete
@@ -267,11 +295,12 @@ dates must be on/after start dates. Past dates are supported.
 | POST | `/api/savings-items/{id}/payments` | `amount`, `paidOn`, item `version`; returns the payment entry and resource location |
 | POST | `/api/savings-items/{id}/ledger/{entryId}/reversal` | item `version`; returns the reversal entry and resource location |
 | PUT | `/api/savings-items/{id}/removal` | item `version`; returns removed item |
-| GET | `/api/dashboard` | Overview, grouped items, `nextAllocationDate` and holiday-calendar status |
+| GET | `/api/dashboard` | Overview, grouped items, category and grand totals, `nextAllocationDate` and holiday-calendar status |
+| GET | `/api/future-look` | As-of date, holiday status, 24 monthly category totals and immediate-funding warnings |
 
 Account `type` values: `0` Cash Account, `1` Cash ISA, `2` Stocks and Shares ISA,
 `3` Investment Account. Derived item `type` values: `0` Short, `1` Medium,
-`2` Long, `3` Past savings goals. Creation requests no longer accept a category
+`2` Long, `3` Historic (the existing `Past` API enum). Creation requests no longer accept a category
 selection; an extra legacy `type` field is ignored, not used for categorisation.
 Account/item responses include their ID and an opaque `version` token. Send the
 latest token with every update; don't decode it or reuse a stale token.

@@ -8,7 +8,7 @@
 <p>Record the target and any money already allocated. Details cannot be edited after creation in this first version.</p>
 <p>Categories follow the Save by date automatically: short term is less than one year away,
     medium term is one to five years away, and long term is more than five years away.
-    Dates before today appear under Past savings goals.</p>
+    Dates before today appear under Historic.</p>
 @if (Error is not null)
 {
     <div class="alert alert-danger" role="alert">@Error</div>
@@ -57,6 +57,6 @@ else
     private async Task SaveAsync()
     {
         if (await PerformAsync(async () => await Api.CreateItemAsync(_item)))
-            Navigation.NavigateTo("/");
+            Navigation.NavigateTo("/savings-items");
     }
 }

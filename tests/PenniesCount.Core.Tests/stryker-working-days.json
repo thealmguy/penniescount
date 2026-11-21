@@ -3,9 +3,10 @@
     "project": "PenniesCount.Core.csproj",
     "mutate": [
       "**/WorkingDaySchedule.cs",
-      "**/BudgetCalculator.cs"
+      "**/BudgetCalculator.cs",
+      "**/FundingForecast.cs"
     ],
-    "test-case-filter": "FullyQualifiedName~WorkingDayScheduleScenarios|FullyQualifiedName~BudgetScenarios",
+    "test-case-filter": "FullyQualifiedName~WorkingDayScheduleScenarios|FullyQualifiedName~BudgetScenarios|FullyQualifiedName~ForecastScenarios",
     "mutation-level": "Complete",
     "concurrency": 4,
     "reporters": [ "progress", "cleartext", "html", "json" ],

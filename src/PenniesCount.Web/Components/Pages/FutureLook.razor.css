@@ -1,0 +1,11 @@
+.forecast-chart-container {
+    height: 24rem;
+    max-width: 100%;
+    position: relative;
+}
+
+@media (max-width: 575.98px) {
+    .forecast-chart-container {
+        height: 18rem;
+    }
+}

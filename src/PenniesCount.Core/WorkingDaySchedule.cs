@@ -20,19 +20,20 @@ public sealed class WorkingDaySchedule : IContributionSchedule
     }
 
     public int? CountRemainingPayments(DateOnly asOf, DateOnly deadline, bool paidToday)
+        => RemainingPaymentDates(asOf, deadline, paidToday).Count();
+
+    public IEnumerable<DateOnly> RemainingPaymentDates(DateOnly asOf, DateOnly deadline, bool paidToday)
     {
         var month = new DateOnly(asOf.Year, asOf.Month, 1);
-        var count = 0;
         while (month <= deadline)
         {
             if (AllocationDateInMonth(month) is { } date && date <= deadline
                 && (date > asOf || (date == asOf && !paidToday)))
-                count++;
+                yield return date;
 
             if (month == LastMonth) break;
             month = month.AddMonths(1);
         }
-        return count;
     }
 
     public DateOnly? NextAllocationDate(DateOnly asOf)
