@@ -1,0 +1,35 @@
+using System.Net;
+using System.Net.Http.Json;
+using Bunit;
+using Microsoft.Extensions.DependencyInjection;
+using PenniesCount.Contracts;
+using PenniesCount.Web.Components.Pages;
+using PenniesCount.Web.Services;
+
+namespace PenniesCount.Web.Tests;
+
+public sealed class HomeScenarios
+{
+    [Fact]
+    public void Given_an_available_api_When_opening_home_Then_its_response_is_displayed()
+    {
+        using var context = new BunitContext();
+        context.Services.AddSingleton(new BudgetClient(new HttpClient(new ReadyHandler())
+        {
+            BaseAddress = new Uri("http://localhost/")
+        }));
+
+        var page = context.Render<Home>();
+
+        page.WaitForAssertion(() => Assert.Contains("API: Ready", page.Markup));
+    }
+
+    private sealed class ReadyHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new HealthResponse("Ready"))
+            });
+    }
+}

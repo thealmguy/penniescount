@@ -1,0 +1,19 @@
+Savings Budget.xlsx
+~$*.xlsx
+**/bin/
+**/obj/
+.vs/
+.idea/
+TestResults/
+*.user
+*.suo
+*.mdf
+*.ldf
+*.bak
+*.db
+appsettings.Local.json
+appsettings.*.Local.json
+.env
+.env.*
+*.pfx
+*.pem

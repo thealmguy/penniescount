@@ -1,0 +1,45 @@
+﻿@page "/"
+
+@rendermode InteractiveServer
+@inject PenniesCount.Web.Services.BudgetClient Api
+@inject ILogger<Home> Logger
+
+<PageTitle>Savings budget</PageTitle>
+
+<h1>Savings budget</h1>
+<p>Plan what your savings are for.</p>
+@if (_error is not null)
+{
+    <p role="alert">@_error</p>
+    <button class="btn btn-primary" @onclick="LoadAsync">Retry</button>
+}
+else
+{
+    <p>@(_status is null ? "Connecting to the API..." : $"API: {_status}. No savings accounts or items yet.")</p>
+}
+
+@code {
+    private string? _status;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _status = (await Api.GetHealthAsync()).Status;
+        }
+        catch (HttpRequestException)
+        {
+            Logger.LogWarning("API connection failed while loading the homepage.");
+            _error = "The API is unavailable. Start it and retry.";
+        }
+        catch (TaskCanceledException)
+        {
+            Logger.LogWarning("API request timed out while loading the homepage.");
+            _error = "The API took too long to respond. Retry.";
+        }
+    }
+}
