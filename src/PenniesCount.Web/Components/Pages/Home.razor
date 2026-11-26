@@ -2,6 +2,7 @@
 
 @rendermode InteractiveServer
 @inherits DatedApiPageBase
+@inject IJSRuntime JS
 
 <PageTitle>Savings budget</PageTitle>
 
@@ -47,11 +48,11 @@
                 Their full remainder is included in Required monthly savings. <a href="savings-items">View savings items</a>.</div>
         }
     </section>
-    <section aria-label="Savings category totals">
-        <h2>Savings totals</h2>
+    <section aria-label="Savings term totals" class="mb-4">
+        <h2>Savings term</h2>
         <div class="table-responsive">
             <table class="table" id="savings-totals">
-                <thead><tr><th scope="col">Category</th><th scope="col">Target</th><th scope="col">Funded allocation</th><th scope="col">Drawn down</th><th scope="col">Available to spend</th><th scope="col">Required monthly contribution</th></tr></thead>
+                <thead><tr><th scope="col">Savings term</th><th scope="col">Target</th><th scope="col">Funded allocation</th><th scope="col">Drawn down</th><th scope="col">Available to spend</th><th scope="col">Required monthly contribution</th></tr></thead>
                 <tbody>
                     @foreach (var summary in _budget.Summaries)
                     {
@@ -70,6 +71,57 @@
             <p>No savings items yet. Add your first item to start planning.</p>
         }
     </section>
+    <section aria-label="Savings category totals">
+        <h2>Savings category</h2>
+        <p>The same savings grouped by purpose. Uncategorised includes existing items until their details are edited.</p>
+        <div class="category-summary">
+            <div class="table-responsive">
+                <table class="table" id="purpose-savings-totals">
+                    <caption>Savings totals by purpose category, including Uncategorised.</caption>
+                    <thead><tr><th scope="col">Category</th><th scope="col">Target</th><th scope="col">Funded allocation</th><th scope="col">Drawn down</th><th scope="col">Available to spend</th><th scope="col">Required monthly contribution</th></tr></thead>
+                    <tbody>
+                        @foreach (var summary in _budget.PurposeSummaries)
+                        {
+                            <tr data-category="@(summary.Category?.ToString() ?? "Uncategorised")">
+                                <th scope="row">@Display.PurposeCategoryName(summary.Category)</th>
+                                <td>@Display.Money(summary.TargetAmount)</td><td>@Display.Money(summary.FundedAmount)</td>
+                                <td>@Display.Money(summary.DrawnDownAmount)</td><td>@Display.Money(summary.AvailableAmount)</td>
+                                <td>@Display.Money(summary.RequiredMonthlyContribution)</td>
+                            </tr>
+                        }
+                        @foreach (var total in _budget.Summaries.Where(x => x.Type is null))
+                        {
+                            <tr data-category="GrandTotal" class="fw-bold">
+                                <th scope="row">Grand total</th>
+                                <td>@Display.Money(total.TargetAmount)</td><td>@Display.Money(total.FundedAmount)</td>
+                                <td>@Display.Money(total.DrawnDownAmount)</td><td>@Display.Money(total.AvailableAmount)</td>
+                                <td>@Display.Money(total.RequiredMonthlyContribution)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div>
+                <h3>Allocated by category</h3>
+                <p>Available to spend, excluding drawdowns. The chart total matches Total allocated.</p>
+                @if (_budget.PurposeSummaries.Any(x => x.AvailableAmount > 0))
+                {
+                    <div class="allocation-chart-container" id="category-allocation-chart" role="img"
+                         aria-label="Doughnut chart of Available to spend by purpose category. Exact values are available in the Savings category table.">
+                        <canvas @ref="_canvas" aria-hidden="true"></canvas>
+                    </div>
+                }
+                else
+                {
+                    <p role="status">No available allocations to display.</p>
+                }
+                @if (_chartError is not null)
+                {
+                    <div class="alert alert-danger" role="alert">@_chartError The complete category values remain available in the table.</div>
+                }
+            </div>
+        </div>
+    </section>
 }
 else
 {
@@ -78,6 +130,67 @@ else
 
 @code {
     private DashboardResponse? _budget;
+    private ElementReference _canvas;
+    private IJSObjectReference? _module;
+    private DashboardResponse? _renderedBudget;
+    private bool _rendering;
+    private string? _chartError;
     protected override DateOnly? AsOfDate => _budget?.AsOfDate;
-    protected override async Task LoadAsync() => await PerformAsync(async () => _budget = await Api.GetDashboardAsync());
+    protected override async Task LoadAsync()
+    {
+        if (await PerformAsync(async () => _budget = await Api.GetDashboardAsync()))
+        {
+            _chartError = null;
+            _renderedBudget = null;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        var budget = _budget;
+        if (budget is null || _rendering || ReferenceEquals(budget, _renderedBudget)) return;
+        _rendering = true;
+        var previousError = _chartError;
+        try
+        {
+            if (budget.PurposeSummaries.Any(x => x.AvailableAmount > 0))
+            {
+                _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/Home.razor.js");
+                var labels = budget.PurposeSummaries.Select(x => Display.PurposeCategoryName(x.Category)).ToArray();
+                var values = budget.PurposeSummaries.Select(x => (double)x.AvailableAmount).ToArray();
+                var exact = budget.PurposeSummaries.Select(x => Display.Money(x.AvailableAmount)).ToArray();
+                await _module.InvokeVoidAsync("render", _canvas, labels, values, exact, Display.Money(budget.TotalAllocated));
+            }
+            else if (_module is not null)
+            {
+                await _module.InvokeVoidAsync("dispose");
+            }
+        }
+        catch (JSException)
+        {
+            _chartError = "The interactive allocation chart could not be loaded.";
+        }
+        finally
+        {
+            _renderedBudget = budget;
+            _rendering = false;
+        }
+        if (!ReferenceEquals(_budget, budget) || previousError != _chartError)
+            StateHasChanged();
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("dispose");
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
+        await base.DisposeAsync();
+    }
 }

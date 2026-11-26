@@ -37,9 +37,14 @@ No financial demo data is seeded.
 
 The left menu links to **Savings budget**, **Savings items**, **Future look**,
 **Savings accounts** and **About**. The homepage retains the headline totals and
-shows category totals for Short term, Medium term, Long term, Historic and the
+shows savings-term totals for Short term, Medium term, Long term, Historic and the
 grand total: target, funded allocation, drawdowns, available funds and required
-monthly contribution. The summary's funded allocation includes drawdowns;
+monthly contribution. A second table shows the same columns by purpose category,
+including Uncategorised and a grand total. The **Allocated by category** doughnut
+shows **Available to spend** by purpose, matching the headline Total allocated;
+when no allocations remain available, it shows an empty-state message instead.
+Both tables retain exact values if the interactive chart cannot load.
+The summary's funded allocation includes drawdowns;
 the headline Total allocated instead means funds still available to spend.
 Savings items contains the editable allocation tables and removed items; About
 explains the calculation and bank-holiday rules.
@@ -88,7 +93,7 @@ try { dotnet stryker --config-file stryker-details-validation.json } finally { P
 
 The ledger configuration targets the ledger, payment, reversal and drawdown
 endpoints, category creation and details editing, the ledger entity rules, and
-the item and dashboard code that reads
+the item and dashboard code (including purpose-category summaries) that reads
 or writes ledger entries. It requires 100% and excludes logging
 calls/logger category names and database-generated/default entity initializers
 from mutation, not financial logic. It runs four test sessions in parallel,

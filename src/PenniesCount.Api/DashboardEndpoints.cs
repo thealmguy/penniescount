@@ -46,18 +46,30 @@ internal static class DashboardEndpoints
             return new DashboardResponse(asOf, savings, allocated, savings - allocated,
                 requiredMonthlySavings, nextAllocationDate, snapshot.Holidays, groups)
             {
-                Summaries = Summarize(groups)
+                Summaries = Summarize(groups),
+                PurposeSummaries = SummarizePurposes(groups)
             };
         });
 
-    internal static SavingsSummaryResponse[] Summarize(SavingsGroupResponse[] groups)
-    {
-        SavingsSummaryResponse Total(SavingsTerm? type, DashboardItemResponse[] rows) =>
-            new(type, rows.Sum(x => x.Item.TargetAmount), rows.Sum(x => x.Item.AllocatedAmount),
-                rows.Sum(x => x.Item.DrawnDownAmount), rows.Sum(x => x.Item.AvailableAmount),
-                rows.All(x => x.RequiredContribution.HasValue) ? rows.Sum(x => x.RequiredContribution) : null);
-        return [.. Enum.GetValues<SavingsTerm>().Select(type =>
+    internal static SavingsSummaryResponse[] Summarize(SavingsGroupResponse[] groups) =>
+        [.. Enum.GetValues<SavingsTerm>().Select(type =>
             Total(type, groups.Where(x => x.Type == type).SelectMany(x => x.Items).ToArray())),
             Total(null, groups.SelectMany(x => x.Items).ToArray())];
+
+    private static SavingsSummaryResponse Total(SavingsTerm? type, DashboardItemResponse[] rows) =>
+        new(type, rows.Sum(x => x.Item.TargetAmount), rows.Sum(x => x.Item.AllocatedAmount),
+            rows.Sum(x => x.Item.DrawnDownAmount), rows.Sum(x => x.Item.AvailableAmount),
+            rows.All(x => x.RequiredContribution.HasValue) ? rows.Sum(x => x.RequiredContribution) : null);
+
+    internal static SavingsPurposeSummaryResponse[] SummarizePurposes(SavingsGroupResponse[] groups)
+    {
+        var items = groups.SelectMany(x => x.Items).ToArray();
+        return Enum.GetValues<SavingsCategory>().Select(x => (SavingsCategory?)x).Append(null)
+            .Select(category =>
+            {
+                var total = Total(null, items.Where(x => x.Item.Category == category).ToArray());
+                return new SavingsPurposeSummaryResponse(category, total.TargetAmount, total.FundedAmount,
+                    total.DrawnDownAmount, total.AvailableAmount, total.RequiredMonthlyContribution);
+            }).ToArray();
     }
 }

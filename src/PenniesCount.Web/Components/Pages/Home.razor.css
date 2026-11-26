@@ -1,0 +1,17 @@
+.category-summary {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.allocation-chart-container {
+    height: 32rem;
+    max-width: 100%;
+    position: relative;
+}
+
+@media (min-width: 1400px) {
+    .category-summary {
+        grid-template-columns: minmax(0, 2fr) minmax(22rem, 1fr);
+    }
+}

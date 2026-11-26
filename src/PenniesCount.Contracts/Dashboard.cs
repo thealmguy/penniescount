@@ -15,10 +15,15 @@ public sealed record DashboardResponse(DateOnly AsOfDate, decimal TotalSavings, 
     HolidayCalendarResponse HolidayCalendar, SavingsGroupResponse[] Groups)
 {
     public SavingsSummaryResponse[] Summaries { get; init; } = [];
+    public SavingsPurposeSummaryResponse[] PurposeSummaries { get; init; } = [];
 }
 
 /// <summary>Category totals, or grand totals when Type is null; funded amounts include drawdowns.</summary>
 public sealed record SavingsSummaryResponse(SavingsTerm? Type, decimal TargetAmount, decimal FundedAmount,
+    decimal DrawnDownAmount, decimal AvailableAmount, decimal? RequiredMonthlyContribution);
+
+/// <summary>Purpose-category totals; null Category means Uncategorised. Funded amounts include drawdowns.</summary>
+public sealed record SavingsPurposeSummaryResponse(SavingsCategory? Category, decimal TargetAmount, decimal FundedAmount,
     decimal DrawnDownAmount, decimal AvailableAmount, decimal? RequiredMonthlyContribution);
 
 public sealed record HolidayCalendarResponse(string Source, DateOnly? CoveredThrough,

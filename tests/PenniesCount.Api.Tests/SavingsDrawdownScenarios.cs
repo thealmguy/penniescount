@@ -43,6 +43,10 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
             Assert.Equal(0m, row.RequiredContribution);
             Assert.Equal(10000m, dashboard.TotalSavings);
             Assert.Equal(item.GetProperty("availableAmount").GetDecimal(), dashboard.TotalAllocated);
+            var purpose = dashboard.PurposeSummaries.Single(x => x.Category == SavingsCategory.HolidaysAndTravel);
+            Assert.Equal(10000m, purpose.FundedAmount);
+            Assert.Equal(item.GetProperty("drawnDownAmount").GetDecimal(), purpose.DrawnDownAmount);
+            Assert.Equal(dashboard.TotalAllocated, purpose.AvailableAmount);
             Assert.Equal(10000m - dashboard.TotalAllocated, dashboard.UnallocatedBalance);
         }
         Assert.Equal(10000m, item.GetProperty("drawnDownAmount").GetDecimal());
@@ -141,6 +145,7 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
         Assert.Equal(0m, dashboard.TotalAllocated);
         Assert.Equal(0m, dashboard.RequiredMonthlySavings);
         Assert.All(dashboard.Groups, x => Assert.Empty(x.Items));
+        Assert.All(dashboard.PurposeSummaries, x => Assert.Equal(new(x.Category, 0m, 0m, 0m, 0m, 0m), x));
         var active = (await client.GetFromJsonAsync<SavingsItemsResponse>("/api/savings-items"))!;
         Assert.Empty(active.Items);
         var archive = (await client.GetFromJsonAsync<SavingsItemsResponse>("/api/savings-items?removed=true"))!;
