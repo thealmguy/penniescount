@@ -1,0 +1,51 @@
+@baseUrl = http://localhost:5100
+@itemId = REPLACE_WITH_ITEM_ID
+@version = REPLACE_WITH_LATEST_ITEM_VERSION
+
+### Create a fictional item (only against a disposable database); category 2 is Transport
+POST {{baseUrl}}/api/savings-items
+Content-Type: application/json
+
+{
+  "name": "Car service example",
+  "category": 2,
+  "targetAmount": 1000,
+  "allocatedAmount": 100,
+  "startDate": "2026-01-01",
+  "targetDate": "2027-04-01"
+}
+
+### Read the current version before editing
+GET {{baseUrl}}/api/savings-items/{{itemId}}
+
+### Edit name, deadline and category only; refresh the version after every write
+PUT {{baseUrl}}/api/savings-items/{{itemId}}/details
+Content-Type: application/json
+
+{
+  "name": "Car maintenance example",
+  "targetDate": "2027-05-01",
+  "category": 2,
+  "version": "{{version}}"
+}
+
+### Missing category returns 400 (including for uncategorised legacy items)
+PUT {{baseUrl}}/api/savings-items/{{itemId}}/details
+Content-Type: application/json
+
+{
+  "name": "Car service example",
+  "targetDate": "2027-04-01",
+  "version": "{{version}}"
+}
+
+### Editing a missing item returns 404
+PUT {{baseUrl}}/api/savings-items/00000000-0000-0000-0000-000000000000/details
+Content-Type: application/json
+
+{
+  "name": "Missing example",
+  "targetDate": "2027-04-01",
+  "category": 2,
+  "version": "{{version}}"
+}

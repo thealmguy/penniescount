@@ -13,6 +13,7 @@ public sealed class RequestBoundaryScenarios
     [InlineData("PUT", "/drawdowns/00000000-0000-0000-0000-000000000001")]
     [InlineData("DELETE", "/drawdowns/00000000-0000-0000-0000-000000000001")]
     [InlineData("PUT", "/removal")]
+    [InlineData("PUT", "/details")]
     public async Task Given_non_json_drawdown_writes_When_submitted_Then_they_are_rejected_before_database_access(string method, string suffix)
     {
         await using var factory = new WebApplicationFactory<Program>();

@@ -1,4 +1,4 @@
 @baseUrl = http://localhost:5100
 
-### Read the 24-month allocation projection
+### Read the 24-month allocation projection by savings term and purpose category
 GET {{baseUrl}}/api/future-look

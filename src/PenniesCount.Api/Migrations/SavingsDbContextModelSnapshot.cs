@@ -99,6 +99,9 @@ namespace PenniesCount.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int?>("Category")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsRemoved")
                         .HasColumnType("bit");
 
@@ -128,6 +131,8 @@ namespace PenniesCount.Api.Migrations
                     b.ToTable("SavingsItems", null, t =>
                         {
                             t.HasCheckConstraint("CK_Items_Allocation", "[AllocatedAmount] >= 0 AND [AllocatedAmount] <= [TargetAmount]");
+
+                            t.HasCheckConstraint("CK_Items_Category", "[Category] IS NULL OR [Category] BETWEEN 0 AND 8");
 
                             t.HasCheckConstraint("CK_Items_Dates", "[TargetDate] >= [StartDate]");
 

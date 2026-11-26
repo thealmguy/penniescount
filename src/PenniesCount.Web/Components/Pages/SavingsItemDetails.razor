@@ -20,6 +20,8 @@
         <p role="status">Removed - read-only. This item no longer contributes to budget totals.</p>
     }
     <dl>
+        <dt>Category</dt><dd id="item-category">@Display.PurposeCategoryName(item.Category)</dd>
+        <dt>Save by</dt><dd id="item-deadline">@item.TargetDate.ToString("dd MMM yyyy")</dd>
         <dt>Original target</dt><dd id="item-target">@Display.Money(item.TargetAmount)</dd>
         <dt>Total funded allocation (including drawdowns)</dt><dd id="item-funded">@Display.Money(item.AllocatedAmount)</dd>
         <dt>Drawn down</dt><dd id="item-drawn">@Display.Money(item.DrawnDownAmount)</dd>

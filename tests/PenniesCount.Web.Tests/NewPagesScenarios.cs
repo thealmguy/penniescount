@@ -32,7 +32,14 @@ public sealed class NewPagesScenarios
             Assert.Equal(4, page.FindAll("#forecast-values thead th").Count - 2);
             Assert.Equal("January 2027", page.Find("#forecast-values tbody tr th").TextContent);
             Assert.Contains("10.00", page.Find("#forecast-values tbody tr").TextContent);
+            Assert.Equal(24, page.FindAll("#purpose-forecast-values tbody tr").Count);
+            Assert.Equal(12, page.FindAll("#purpose-forecast-values thead th").Count);
+            Assert.Contains("Uncategorised", page.Find("#purpose-forecast-values thead").TextContent);
+            Assert.Contains("House & Garden", page.Find("#purpose-forecast-values thead").TextContent);
+            Assert.Contains("Long-Term Wealth Building", page.Find("#purpose-forecast-values thead").TextContent);
+            Assert.Contains("5.00", page.Find("#purpose-forecast-values tbody tr").TextContent);
         });
+        Assert.Equal(2, page.FindAll("canvas").Count);
         Assert.Equal("Stacked bar chart of monthly savings funding needs. Exact values are available in the table below.",
             page.Find(".forecast-chart-container").GetAttribute("aria-label"));
         Assert.Contains("no feasible allocation dates", page.Markup);
@@ -51,6 +58,7 @@ public sealed class NewPagesScenarios
 
         page.WaitForAssertion(() => Assert.Contains("API is unavailable", page.Find("[role=alert]").TextContent));
         Assert.Empty(page.FindAll("#forecast-values"));
+        Assert.Empty(page.FindAll("#purpose-forecast-values"));
         Assert.Empty(page.FindAll("canvas"));
     }
 
@@ -95,6 +103,73 @@ public sealed class NewPagesScenarios
             Assert.Equal("01 Feb 2027", page.Find("#forecast-date").TextContent);
             Assert.Equal("February 2027", page.Find("#forecast-values tbody tr th").TextContent);
             Assert.Equal(2, requests);
+            Assert.Equal("February 2027", page.Find("#purpose-forecast-values tbody tr th").TextContent);
+        });
+    }
+
+    [Fact]
+    public async Task Given_changed_values_on_the_same_date_When_refreshed_Then_both_charts_and_tables_are_updated()
+    {
+        using var context = new BunitContext();
+        var module = context.JSInterop.SetupModule("./Components/Pages/FutureLook.razor.js");
+        module.Mode = JSRuntimeMode.Loose;
+        context.Services.AddSingleton(TimeProvider.System);
+        var requests = 0;
+        context.Services.AddSingleton(new BudgetClient(new HttpClient(new ReplyHandler(_ => Json(Forecast(funding: ++requests * 10m))))
+        {
+            BaseAddress = new("http://localhost/")
+        }));
+        var page = context.Render<FutureLook>();
+        page.WaitForAssertion(() => Assert.Equal(2, module.Invocations.Count(x => x.Identifier == "render")));
+        page.Find("button").Click();
+        page.WaitForAssertion(() =>
+        {
+            Assert.Equal(4, module.Invocations.Count(x => x.Identifier == "render"));
+            Assert.Contains("20.00", page.Find("#forecast-values tbody tr").TextContent);
+            Assert.Contains("20.00", page.Find("#purpose-forecast-values tbody tr").TextContent);
+        });
+        var calls = module.Invocations.Where(x => x.Identifier == "render").ToArray();
+        var series = Assert.IsType<string[]>(calls[^1].Arguments[5]);
+        Assert.Equal(10, series.Length);
+        Assert.Equal("Uncategorised", series[^1]);
+        var values = Assert.IsType<double[][]>(calls[^1].Arguments[2]);
+        Assert.Equal(10d, values[0][0]);
+        Assert.Equal(10d, values[0][^1]);
+        Assert.Equal(24, values.Length);
+        Assert.Equal("£20.00", Assert.IsType<string[]>(calls[^1].Arguments[4])[0]);
+        Assert.Equal(4, Assert.IsType<string[]>(calls[^2].Arguments[5]).Length);
+        await context.DisposeAsync();
+        Assert.Equal(2, module.Invocations.Count(x => x.Identifier == "dispose"));
+    }
+
+    [Fact]
+    public void Given_a_refresh_during_chart_rendering_When_rendering_finishes_Then_both_charts_use_coherent_latest_values()
+    {
+        using var context = new BunitContext();
+        var module = context.JSInterop.SetupModule("./Components/Pages/FutureLook.razor.js");
+        module.Mode = JSRuntimeMode.Loose;
+        var pending = module.SetupVoid("render", _ => true);
+        context.Services.AddSingleton(TimeProvider.System);
+        var requests = 0;
+        context.Services.AddSingleton(new BudgetClient(new HttpClient(new ReplyHandler(_ => Json(Forecast(funding: ++requests * 10m))))
+        {
+            BaseAddress = new("http://localhost/")
+        }));
+        var page = context.Render<FutureLook>();
+        page.WaitForAssertion(() => Assert.Single(module.Invocations, x => x.Identifier == "render"));
+        page.Find("button").Click();
+        page.WaitForAssertion(() => Assert.Contains("20.00", page.Find("#purpose-forecast-values tbody tr").TextContent));
+        pending.SetVoidResult();
+        page.WaitForAssertion(() =>
+        {
+            var calls = module.Invocations.Where(x => x.Identifier == "render").ToArray();
+            Assert.Equal(4, calls.Length);
+            foreach (var call in calls)
+            {
+                var amount = Assert.IsType<double[][]>(call.Arguments[2])[0].Sum();
+                Assert.Equal(Display.Money((decimal)amount), Assert.IsType<string[]>(call.Arguments[4])[0]);
+            }
+            Assert.All(calls.TakeLast(2), call => Assert.Equal("£20.00", Assert.IsType<string[]>(call.Arguments[4])[0]));
         });
     }
 
@@ -115,6 +190,31 @@ public sealed class NewPagesScenarios
 
         page.WaitForAssertion(() => Assert.Contains("interactive chart could not be loaded", page.Find("[role=alert]").TextContent));
         Assert.Equal(24, page.FindAll("#forecast-values tbody tr").Count);
+        Assert.Equal(24, page.FindAll("#purpose-forecast-values tbody tr").Count);
+    }
+
+    [Fact]
+    public void Given_only_a_category_chart_failure_When_loading_Then_the_term_chart_and_both_tables_remain_available()
+    {
+        using var context = new BunitContext();
+        var module = context.JSInterop.SetupModule("./Components/Pages/FutureLook.razor.js");
+        module.Mode = JSRuntimeMode.Loose;
+        module.SetupVoid("render", invocation => invocation.Arguments[5] is string[] series && series.Length == 10)
+            .SetException(new JSException("Category chart unavailable"));
+        context.Services.AddSingleton(TimeProvider.System);
+        context.Services.AddSingleton(new BudgetClient(new HttpClient(new ReplyHandler(_ => Json(Forecast())))
+        {
+            BaseAddress = new("http://localhost/")
+        }));
+        var page = context.Render<FutureLook>();
+        page.WaitForAssertion(() =>
+        {
+            Assert.Single(page.FindAll("[role=alert]"));
+            Assert.Contains("monthly category values", page.Find("[role=alert]").TextContent);
+            Assert.Equal(2, module.Invocations.Count(x => x.Identifier == "render"));
+            Assert.Equal(24, page.FindAll("#forecast-values tbody tr").Count);
+            Assert.Equal(24, page.FindAll("#purpose-forecast-values tbody tr").Count);
+        });
     }
 
     [Fact]
@@ -186,15 +286,20 @@ public sealed class NewPagesScenarios
         });
     }
 
-    private static FutureLookResponse Forecast(DateOnly? asOf = null)
+    private static FutureLookResponse Forecast(DateOnly? asOf = null, decimal funding = 10m)
     {
         var date = asOf ?? new DateOnly(2027, 1, 15);
         var months = Enumerable.Range(0, 24).Select(index =>
         {
             var month = new DateOnly(date.Year, date.Month, 1).AddMonths(index);
             var categories = Enum.GetValues<SavingsTerm>().Select(type => new ForecastCategoryResponse(type,
-                index == 0 && type == SavingsTerm.Short ? 10m : 0m)).ToArray();
-            return new ForecastMonthResponse(month, categories, categories.Sum(x => x.Amount));
+                index == 0 && type == SavingsTerm.Short ? funding : 0m)).ToArray();
+            return new ForecastMonthResponse(month, categories, categories.Sum(x => x.Amount))
+            {
+                PurposeCategories = Enum.GetValues<SavingsCategory>().Select(x => (SavingsCategory?)x).Append(null)
+                    .Select(category => new ForecastPurposeCategoryResponse(category,
+                        index == 0 && (category == SavingsCategory.EmergencyFund || category is null) ? funding / 2 : 0m)).ToArray()
+            };
         }).ToArray();
         return new(date,
             new("GOV.UK bank holidays (England and Wales)", new(2028, 12, 31), null, false, null),

@@ -31,7 +31,7 @@ internal static class SavingsItemEndpoints
             if (error is not null) return error;
             var item = new SavingsItem
             {
-                Name = request.Name.Trim(), TargetAmount = request.TargetAmount,
+                Name = request.Name.Trim(), Category = request.Category, TargetAmount = request.TargetAmount,
                 StartDate = request.StartDate, TargetDate = request.TargetDate
             };
             if (request.AllocatedAmount > 0)
@@ -66,5 +66,32 @@ internal static class SavingsItemEndpoints
                 item.Record(LedgerEntryType.FundingAdjustment, adjustment, asOf, "Total funding updated", clock.GetUtcNow());
             return await SavingsDrawdownEndpoints.SaveItemAsync(db, item, logger, ct) ?? Results.Ok(item.ToResponse(asOf));
         });
+        routes.MapPut("/{id:guid}/details", async Task<IResult> (Guid id, UpdateSavingsItemDetailsRequest request,
+            SavingsDbContext db, TimeProvider clock, ILoggerFactory logs, CancellationToken ct) =>
+        {
+            var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+            var logger = logs.CreateLogger("SavingsItems");
+            var error = ApiValidation.Check(request, logger);
+            if (error is not null) return error;
+            var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
+            if (item is null) return Results.NotFound();
+            error = SavingsDrawdownEndpoints.CheckWritable(item, request.Version, logger);
+            if (error is not null) return error;
+            if (request.TargetDate < item.StartDate)
+            {
+                logger.LogWarning("Item target date validation failed.");
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.TargetDate)] = ["Target date must be on or after the start date."]
+                });
+            }
+            item.Name = request.Name.Trim();
+            item.TargetDate = request.TargetDate;
+            item.Category = request.Category;
+            return await SavingsDrawdownEndpoints.SaveItemAsync(db, item, logger, ct) ?? Results.Ok(item.ToResponse(asOf));
+        }).WithName("UpdateSavingsItemDetails").WithSummary("Edit savings item details")
+            .WithDescription("Update name, save-by date and required purpose category without changing funding or ledger history.")
+            .Produces<SavingsItemResponse>().ProducesValidationProblem().Produces(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
     }
 }

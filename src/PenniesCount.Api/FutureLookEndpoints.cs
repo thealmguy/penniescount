@@ -28,11 +28,19 @@ internal static class FutureLookEndpoints
                     projections.Where(x => x.Item.Type == type).SelectMany(x => x.Forecast.Payments)
                         .Where(x => x.Date.Year == month.Year && x.Date.Month == month.Month)
                         .Sum(x => x.Amount))).ToArray();
-                return new ForecastMonthResponse(month, categories, categories.Sum(x => x.Amount));
+                var purposeCategories = Enum.GetValues<SavingsCategory>().Select(x => (SavingsCategory?)x).Append(null)
+                    .Select(category => new ForecastPurposeCategoryResponse(category,
+                        projections.Where(x => x.Item.Category == category).SelectMany(x => x.Forecast.Payments)
+                            .Where(x => x.Date.Year == month.Year && x.Date.Month == month.Month)
+                            .Sum(x => x.Amount))).ToArray();
+                return new ForecastMonthResponse(month, categories, categories.Sum(x => x.Amount))
+                {
+                    PurposeCategories = purposeCategories
+                };
             }).ToArray();
             var neededNow = projections.Where(x => x.Forecast.NeededNow).Select(x =>
                 new ForecastAttentionResponse(x.Item.Id, x.Item.Name, x.Item.TargetAmount - x.Item.AllocatedAmount)).ToArray();
             return TypedResults.Ok(new FutureLookResponse(snapshot.AsOf, snapshot.Holidays, months, neededNow));
         }).WithName("GetFutureLook").WithSummary("Project the next 24 months of savings funding")
-        .WithDescription("Read-only monthly allocation estimates, grouped by current category, with immediate funding warnings.");
+        .WithDescription("Read-only monthly allocation estimates, grouped by current term and purpose category, with immediate funding warnings.");
 }

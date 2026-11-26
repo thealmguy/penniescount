@@ -8,6 +8,20 @@ public static class Display
     private static readonly CultureInfo Gbp = CultureInfo.GetCultureInfo("en-GB");
     public static string Money(decimal amount) => amount.ToString("C2", Gbp);
     public static string Money(decimal? amount) => amount.HasValue ? Money(amount.Value) : "Unavailable";
+    public static string PurposeCategoryName(SavingsCategory? category) => category switch
+    {
+        null => "Uncategorised",
+        SavingsCategory.EmergencyFund => "Emergency Fund",
+        SavingsCategory.HouseAndGarden => "House & Garden",
+        SavingsCategory.Transport => "Transport",
+        SavingsCategory.HolidaysAndTravel => "Holidays & Travel",
+        SavingsCategory.ChildrenAndEducation => "Children & Education",
+        SavingsCategory.GiftsAndChristmas => "Gifts & Christmas",
+        SavingsCategory.LeisureAndTechnology => "Leisure & Technology",
+        SavingsCategory.LongTermWealthBuilding => "Long-Term Wealth Building",
+        SavingsCategory.Other => "Other",
+        _ => throw new ArgumentOutOfRangeException(nameof(category))
+    };
     public static string SavingsCategoryName(SavingsTerm type) => type switch
     {
         SavingsTerm.Short => "Short term",

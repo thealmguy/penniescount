@@ -79,15 +79,25 @@ Push-Location .\tests\PenniesCount.Api.Tests
 try { dotnet stryker --config-file stryker-ledger.json } finally { Pop-Location }
 ```
 
+Run the details-form deadline validation gate:
+
+```powershell
+Push-Location .\tests\PenniesCount.Web.Tests
+try { dotnet stryker --config-file stryker-details-validation.json } finally { Pop-Location }
+```
+
 The ledger configuration targets the ledger, payment, reversal and drawdown
-endpoints, the ledger entity rules, and the item and dashboard code that reads
+endpoints, category creation and details editing, the ledger entity rules, and
+the item and dashboard code that reads
 or writes ledger entries. It requires 100% and excludes logging
 calls/logger category names and database-generated/default entity initializers
 from mutation, not financial logic. It runs four test sessions in parallel,
 each against its own LocalDB databases, and takes several minutes. Its character spans isolate changed logic
-in existing files; update those spans when that code moves. The forecast endpoint's
-non-financial OpenAPI name and description strings are outside its mutation span.
-Both configurations use local reports
+in existing files; update those spans when that code moves. The forecast and
+details endpoints' non-financial OpenAPI name and description
+strings are outside their mutation spans. The forecast span includes both term
+and purpose-category aggregation.
+All mutation configurations use local reports
 only; no code or reports are uploaded.
 
 The committed Stryker configuration uses the Complete mutation level and
@@ -112,8 +122,27 @@ Submitting the same balance still records a snapshot. Concurrent changes are
 rejected with HTTP 409; refresh and retry rather than overwriting another update.
 
 Create savings items with a name, target, start and deadline, plus an initial
-allocation. Categories are inferred from the save-by date using the API's local
-calendar date, so they change as deadlines draw nearer:
+allocation and a required purpose category:
+
+- Emergency Fund
+- House & Garden
+- Transport
+- Holidays & Travel
+- Children & Education
+- Gifts & Christmas
+- Leisure & Technology
+- Long-Term Wealth Building
+- Other
+
+Existing items stay **Uncategorised** until edited. Uncategorised is not a
+selectable category; new items and details edits must select one of the nine
+categories. Apply the `SavingsPurposeCategories` migration explicitly with the
+database-update command above. It preserves existing data and leaves their
+category null; rolling back removes all newly stored purpose categories.
+
+Purpose categories are separate from savings **terms**, which are inferred from
+the save-by date using the API's local calendar date, so they change as deadlines
+draw nearer:
 
 - **Short term:** today through less than one calendar year away.
 - **Medium term:** one through five calendar years away, including both boundaries.
@@ -121,10 +150,10 @@ calendar date, so they change as deadlines draw nearer:
 - **Historic:** any save-by date before today, whether fully allocated or not.
 
 Calendar-year anniversaries use 28 February for a leap-day date in non-leap years.
-There is no manual category selection or persisted category. Apply the latest
-migration explicitly using the database-update command above; existing dates,
-amounts and IDs are preserved. Rolling back that migration recreates the legacy
-category column as Short for every item; old manual categories cannot be recovered.
+The term is not manually selected or persisted. The earlier
+`DateDerivedSavingsCategories` migration preserves existing dates, amounts and
+IDs. Rolling back that migration recreates the legacy `Type` column as Short for
+every item; old manual terms cannot be recovered.
 
 An allocation-only action can replace the
 recorded total later; it is stored as a signed **funding adjustment** for the
@@ -132,8 +161,17 @@ difference (an unchanged total records nothing but still advances the version).
 It does not move money between accounts. Accounts form
 one pool; combined allocations may exceed account funds, but each item's
 allocation must stay between its total drawdowns and its target. Allocation
-means **total funding to date**, including money already spent. General item
-editing and permanent item deletion are not implemented.
+means **total funding to date**, including money already spent.
+
+**Edit details** opens a modal to change the name, save-by date and purpose
+category. The new deadline must be on/after the original start date; past dates
+are allowed. Target amount, start date, funding and ledger history are not
+changed. Existing categories are preselected; uncategorised items require a
+selection before saving. Updating the deadline recalculates the term and funding
+recommendations. Details edits use the same version checks as allocation and
+ledger writes; refresh and retry on a conflict. Errors retain the entered values,
+Cancel/Escape discards unsaved changes, and dismissal is disabled during save.
+Removed items are read-only. Permanent item deletion is not implemented.
 
 Update allocation opens a modal with the current amount. Validation and API
 errors stay in the modal without discarding the edit. A successful save closes
@@ -229,9 +267,11 @@ reapplying a migration.
   available. Estimates may change when holiday data for those months becomes available.
 
 The **Future look** page projects 24 calendar months, starting with the current
-month, with stacked Short, Medium, Long and Historic allocation bars. The
-interactive Chart.js tooltip shows all four GBP amounts and the monthly total;
-an accessible table provides exact figures. Its read-only forecast includes
+month, with stacked Short, Medium, Long and Historic allocation bars. A second
+chart groups the same payments by the nine purpose categories plus Uncategorised;
+both charts have identical monthly totals. Each interactive Chart.js tooltip
+shows all series' GBP amounts and the monthly total; accessible tables provide
+exact figures, even if a chart cannot load. Its read-only forecast includes
 future-start goals from their first eligible allocation date, spreads funding
 over all remaining eligible dates through each goal's deadline (including
 dates beyond the chart), rounds payments up to pennies and caps the final
@@ -283,7 +323,8 @@ dates must be on/after start dates. Past dates are supported.
 | GET | `/api/accounts/{id}/balance-history` | Array of `id`, `totalFunds`, `recordedAtUtc`, ordered by timestamp then ID |
 | GET | `/api/savings-items` | `asOfDate` and active `items` array; `?removed=true` lists only removed items |
 | GET | `/api/savings-items/{id}` | One savings item |
-| POST | `/api/savings-items` | `name`, `targetAmount`, `allocatedAmount`, `startDate`, `targetDate`; returns item and resource location |
+| POST | `/api/savings-items` | `name`, required `category`, `targetAmount`, `allocatedAmount`, `startDate`, `targetDate`; returns item and resource location |
+| PUT | `/api/savings-items/{id}/details` | `name`, `targetDate`, required `category`, item `version`; returns updated item without changing funding or ledger history |
 | PUT | `/api/savings-items/{id}/allocation` | `allocatedAmount`, `version`; returns updated item |
 | GET | `/api/savings-items/{id}/drawdowns` | `asOfDate`, current `item` (including version), and effective (non-reversed) `drawdowns` |
 | GET | `/api/savings-items/{id}/drawdowns/{drawdownId}` | One drawdown record, including reversed ones |
@@ -296,7 +337,16 @@ dates must be on/after start dates. Past dates are supported.
 | POST | `/api/savings-items/{id}/ledger/{entryId}/reversal` | item `version`; returns the reversal entry and resource location |
 | PUT | `/api/savings-items/{id}/removal` | item `version`; returns removed item |
 | GET | `/api/dashboard` | Overview, grouped items, category and grand totals, `nextAllocationDate` and holiday-calendar status |
-| GET | `/api/future-look` | As-of date, holiday status, 24 monthly category totals and immediate-funding warnings |
+| GET | `/api/future-look` | As-of date, holiday status, 24 months with term `categories`, `purposeCategories`, shared `total` and immediate-funding warnings |
+
+Item responses include nullable `category`. Its numeric values are `0` Emergency
+Fund, `1` House & Garden, `2` Transport, `3` Holidays & Travel, `4` Children &
+Education, `5` Gifts & Christmas, `6` Leisure & Technology, `7` Long-Term Wealth
+Building and `8` Other. Null is only valid for existing uncategorised items, not
+creation or details writes. The existing `type` remains the derived savings term.
+Each forecast month's `purposeCategories` contains all nine categories in this
+order, followed by `{ "category": null, "amount": ... }` for Uncategorised,
+including zero-valued buckets.
 
 Account `type` values: `0` Cash Account, `1` Cash ISA, `2` Stocks and Shares ISA,
 `3` Investment Account. Derived item `type` values: `0` Short, `1` Medium,

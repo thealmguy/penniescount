@@ -21,10 +21,20 @@
     With no allocation dates remaining, the full funding remainder is Needed now, including underfunded historic goals.
     Recommendations round upward to the nearest penny; the headline monthly total sums these recommendations.</p>
 <h2>Categories</h2>
-<p>Categories use the API's local budget date and the save-by deadline: Short term is less than one calendar year away,
+<p>Purpose categories are chosen when adding an item or editing its details. Existing items remain Uncategorised until edited.</p>
+<ul>
+    @foreach (var category in Enum.GetValues<SavingsCategory>())
+    {
+        <li>@Display.PurposeCategoryName(category)</li>
+    }
+</ul>
+<p>Edit details changes only the name, save-by date and purpose category, not funding or ledger history.
+    Save by must be on or after the original start date; past dates are allowed. Removed items remain read-only.</p>
+<p>Savings terms use the API's local budget date and the save-by deadline: Short term is less than one calendar year away,
     Medium term is one through five years away, Long term is more than five years away, and Historic means a deadline before today.</p>
 <h2>Future look</h2>
-<p>The chart projects the current month and the following 23 months. Each goal keeps its category as of the forecast date.
+<p>The charts project the current month and the following 23 months. Each goal keeps its savings term as of the forecast date.
+    The category chart groups the same payments by purpose, including Uncategorised; both charts have the same monthly totals.
     Funding is spread over all eligible dates through its deadline, even when the deadline is beyond the chart.
     Future-start goals are included from the first eligible allocation date on or after their start date.</p>
 <p>Monthly payments round up to pennies and are capped at the outstanding projected remainder, so the final payment may be smaller.

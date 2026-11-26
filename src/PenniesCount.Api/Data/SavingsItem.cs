@@ -6,6 +6,7 @@ public sealed class SavingsItem
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";
+    public SavingsCategory? Category { get; set; }
     public decimal TargetAmount { get; set; }
     // A constrained projection of the ledger's funding; it is recalculated whenever an entry is recorded.
     public decimal AllocatedAmount { get; set; }
@@ -49,6 +50,7 @@ public sealed class SavingsItem
         return new(Id, Name, SavingsTermClassifier.Classify(TargetDate, asOf), TargetAmount,
             AllocatedAmount, StartDate, TargetDate, Convert.ToBase64String(Version))
         {
+            Category = Category,
             DrawnDownAmount = drawnDown, AvailableAmount = AllocatedAmount - drawnDown, IsRemoved = IsRemoved
         };
     }

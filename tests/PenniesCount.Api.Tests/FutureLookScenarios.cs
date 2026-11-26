@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PenniesCount.Api.Data;
 using PenniesCount.Api;
 using PenniesCount.Api.Holidays;
 using PenniesCount.Contracts;
@@ -13,6 +14,66 @@ public sealed class FutureLookScenarios : IAsyncLifetime
     private readonly DatabaseFactory factory = new();
     public Task InitializeAsync() => factory.InitializeAsync();
     public Task DisposeAsync() => ((IAsyncLifetime)factory).DisposeAsync();
+
+    [Fact]
+    public async Task Given_all_purpose_categories_and_legacy_items_When_forecasting_Then_both_groupings_reconcile_and_edits_move_funding()
+    {
+        await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedClock());
+        }));
+        using var client = host.CreateClient();
+        SavingsItemResponse? first = null;
+        foreach (var category in Enum.GetValues<SavingsCategory>())
+        {
+            var item = await CreateAsync(client, $"Category {category}", 100m + 3m * (int)category, 0m,
+                new(2027, 1, 1), new(2027, 4, 1), category);
+            first ??= item;
+        }
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SavingsDbContext>();
+            db.SavingsItems.Add(new SavingsItem
+            {
+                Name = "Uncategorised legacy", TargetAmount = 90m, StartDate = new(2027, 1, 1), TargetDate = new(2027, 4, 1)
+            });
+            await db.SaveChangesAsync();
+        }
+        var removed = await CreateAsync(client, "Removed category example", 900m, 0m,
+            new(2027, 1, 1), new(2027, 4, 1), SavingsCategory.EmergencyFund);
+        using var removal = await client.PutAsJsonAsync($"/api/savings-items/{removed.Id}/removal",
+            new ItemVersionRequest { Version = removed.Version });
+        removal.EnsureSuccessStatusCode();
+        var forecast = (await client.GetFromJsonAsync<FutureLookResponse>("/api/future-look"))!;
+        Assert.All(forecast.Months, month =>
+        {
+            Assert.Equal(10, month.PurposeCategories.Length);
+            Assert.Equal(Enum.GetValues<SavingsCategory>().Select(x => (SavingsCategory?)x).Append(null),
+                month.PurposeCategories.Select(x => x.Category));
+            Assert.Equal(month.Total, month.PurposeCategories.Sum(x => x.Amount));
+            Assert.Equal(month.Categories.Sum(x => x.Amount), month.Total);
+        });
+        foreach (var category in Enum.GetValues<SavingsCategory>())
+        {
+            Assert.Equal(33.34m + (int)category, forecast.Months[1].PurposeCategories.Single(x => x.Category == category).Amount);
+            Assert.Equal(33.32m + (int)category, forecast.Months[3].PurposeCategories.Single(x => x.Category == category).Amount);
+        }
+        Assert.Equal(30m, forecast.Months[1].PurposeCategories.Single(x => x.Category is null).Amount);
+        Assert.All(forecast.Months.Skip(4), month => Assert.All(month.PurposeCategories, x => Assert.Equal(0m, x.Amount)));
+        Assert.All(forecast.Months[0].PurposeCategories, x => Assert.Equal(0m, x.Amount));
+
+        using var edit = await client.PutAsJsonAsync($"/api/savings-items/{first!.Id}/details",
+            new UpdateSavingsItemDetailsRequest
+            {
+                Name = first.Name, TargetDate = first.TargetDate, Category = SavingsCategory.Transport, Version = first.Version
+            });
+        edit.EnsureSuccessStatusCode();
+        var moved = (await client.GetFromJsonAsync<FutureLookResponse>("/api/future-look"))!;
+        Assert.Equal(forecast.Months.Select(x => x.Total), moved.Months.Select(x => x.Total));
+        Assert.Equal(0m, moved.Months[1].PurposeCategories.Single(x => x.Category == SavingsCategory.EmergencyFund).Amount);
+        Assert.Equal(68.68m, moved.Months[1].PurposeCategories.Single(x => x.Category == SavingsCategory.Transport).Amount);
+    }
 
     [Fact]
     public async Task Given_active_goals_When_reading_future_look_Then_it_returns_24_months_with_capped_payments_and_attention()
@@ -46,6 +107,8 @@ public sealed class FutureLookScenarios : IAsyncLifetime
             Assert.Equal(4, month.Categories.Length);
             Assert.Equal(Enum.GetValues<SavingsTerm>(), month.Categories.Select(x => x.Type));
             Assert.Equal(month.Categories.Sum(x => x.Amount), month.Total);
+            Assert.Equal(month.Total, month.PurposeCategories.Single(x => x.Category == SavingsCategory.Other).Amount);
+            Assert.Equal(month.Total, month.PurposeCategories.Sum(x => x.Amount));
         });
         var shortTerm = forecast.Months.Select(x => x.Categories.Single(y => y.Type == SavingsTerm.Short)).ToArray();
         Assert.Equal(33.34m, shortTerm[1].Amount);
@@ -107,6 +170,8 @@ public sealed class FutureLookScenarios : IAsyncLifetime
         var paidForecast = (await client.GetFromJsonAsync<FutureLookResponse>("/api/future-look"))!;
         Assert.Equal(0m, paidForecast.Months[0].Total);
         Assert.Equal(30m, paidForecast.Months[1].Total);
+        Assert.Equal(0m, paidForecast.Months[0].PurposeCategories.Single(x => x.Category == SavingsCategory.Other).Amount);
+        Assert.Equal(30m, paidForecast.Months[1].PurposeCategories.Single(x => x.Category == SavingsCategory.Other).Amount);
 
         var updated = (await client.GetFromJsonAsync<SavingsItemResponse>($"/api/savings-items/{item.Id}"))!;
         using var reversal = await client.PostAsJsonAsync($"/api/savings-items/{item.Id}/ledger/{entry.Id}/reversal",
@@ -115,6 +180,7 @@ public sealed class FutureLookScenarios : IAsyncLifetime
         var reversedForecast = (await client.GetFromJsonAsync<FutureLookResponse>("/api/future-look"))!;
         Assert.Equal(25m, reversedForecast.Months[0].Total);
         Assert.Equal(25m, reversedForecast.Months[1].Total);
+        Assert.Equal(25m, reversedForecast.Months[0].PurposeCategories.Single(x => x.Category == SavingsCategory.Other).Amount);
     }
 
     [Fact]
@@ -199,11 +265,12 @@ public sealed class FutureLookScenarios : IAsyncLifetime
     }
 
     private static async Task<SavingsItemResponse> CreateAsync(HttpClient client, string name, decimal target,
-        decimal allocated, DateOnly start, DateOnly deadline)
+        decimal allocated, DateOnly start, DateOnly deadline, SavingsCategory category = SavingsCategory.Other)
     {
         using var response = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
-            Name = name, TargetAmount = target, AllocatedAmount = allocated, StartDate = start, TargetDate = deadline
+            Name = name, TargetAmount = target, AllocatedAmount = allocated, StartDate = start, TargetDate = deadline,
+            Category = category
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<SavingsItemResponse>())!;

@@ -455,7 +455,8 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
             INSERT INTO Drawdowns (Id, SavingsItemId, Amount, SpentOn, Description, RecordedAtUtc)
             VALUES ({drawdown}, {funded}, {1500m}, {spentOn}, {"Flights"}, {recorded});
             """);
-        var versions = await db.SavingsItems.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Version);
+        var versions = await db.SavingsItems.AsNoTracking().Select(x => new { x.Id, x.Version })
+            .ToDictionaryAsync(x => x.Id, x => x.Version);
         await migrator.MigrateAsync();
         var items = await db.SavingsItems.AsNoTracking().Include(x => x.Entries).ToDictionaryAsync(x => x.Id);
         Assert.Empty(items[unfunded].Entries);
@@ -511,6 +512,7 @@ public sealed class SavingsDrawdownScenarios : IAsyncLifetime
         using var response = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "Holiday example", TargetAmount = 10000m, AllocatedAmount = allocation,
+            Category = SavingsCategory.HolidaysAndTravel,
             StartDate = new(2026, 1, 1), TargetDate = new(2027, 4, 1)
         });
         response.EnsureSuccessStatusCode();

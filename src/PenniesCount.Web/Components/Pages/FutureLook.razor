@@ -41,7 +41,8 @@
             </ul>
         </div>
     }
-    <div class="forecast-chart-container" role="img" aria-label="Stacked bar chart of monthly savings funding needs. Exact values are available in the table below.">
+    <h2>Funding by savings term</h2>
+    <div class="forecast-chart-container" id="term-forecast-chart" role="img" aria-label="Stacked bar chart of monthly savings funding needs. Exact values are available in the table below.">
         <canvas @ref="_canvas" aria-hidden="true"></canvas>
     </div>
     @if (_chartError is not null)
@@ -51,7 +52,7 @@
     <h2>Monthly forecast values</h2>
     <div class="table-responsive">
         <table class="table" id="forecast-values">
-            <caption>Projected allocation amounts by calendar month and current savings category.</caption>
+            <caption>Projected allocation amounts by calendar month and current savings term.</caption>
             <thead>
                 <tr><th scope="col">Month</th>
                     @foreach (var category in _forecast.Months[0].Categories)
@@ -76,6 +77,43 @@
             </tbody>
         </table>
     </div>
+    <h2>Funding by category</h2>
+    <p>The same projected payments grouped by purpose. Uncategorised includes existing items until their details are edited.</p>
+    <div class="forecast-chart-container purpose-chart" id="purpose-forecast-chart" role="img" aria-label="Stacked bar chart of monthly savings funding needs by purpose category. Exact values are available in the category table below.">
+        <canvas @ref="_purposeCanvas" aria-hidden="true"></canvas>
+    </div>
+    @if (_purposeChartError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_purposeChartError The complete monthly category values remain available in the table.</div>
+    }
+    <h2>Monthly category forecast values</h2>
+    <div class="table-responsive">
+        <table class="table" id="purpose-forecast-values">
+            <caption>Projected allocation amounts by calendar month and purpose category, including Uncategorised.</caption>
+            <thead>
+                <tr><th scope="col">Month</th>
+                    @foreach (var category in _forecast.Months[0].PurposeCategories)
+                    {
+                        <th scope="col">@Display.PurposeCategoryName(category.Category)</th>
+                    }
+                    <th scope="col">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var month in _forecast.Months)
+                {
+                    <tr @key="month.Month">
+                        <th scope="row">@month.Month.ToString("MMMM yyyy")</th>
+                        @foreach (var category in month.PurposeCategories)
+                        {
+                            <td>@Display.Money(category.Amount)</td>
+                        }
+                        <td>@Display.Money(month.Total)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 else
 {
@@ -85,9 +123,12 @@ else
 @code {
     private FutureLookResponse? _forecast;
     private ElementReference _canvas;
+    private ElementReference _purposeCanvas;
     private IJSObjectReference? _module;
-    private DateOnly? _renderedDate;
+    private FutureLookResponse? _renderedForecast;
+    private bool _rendering;
     private string? _chartError;
+    private string? _purposeChartError;
     protected override DateOnly? AsOfDate => _forecast?.AsOfDate;
 
     protected override async Task LoadAsync()
@@ -95,29 +136,58 @@ else
         if (await PerformAsync(async () => _forecast = await Api.GetFutureLookAsync()))
         {
             _chartError = null;
-            _renderedDate = null;
+            _purposeChartError = null;
+            _renderedForecast = null;
         }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
-        if (_forecast is null || _forecast.AsOfDate == _renderedDate) return;
+        var forecast = _forecast;
+        if (forecast is null || _rendering || ReferenceEquals(forecast, _renderedForecast)) return;
+        _rendering = true;
+        var previousError = _chartError;
+        var previousPurposeError = _purposeChartError;
         try
         {
             _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/FutureLook.razor.js");
-            var labels = _forecast.Months.Select(x => x.Month.ToString("MMM yyyy")).ToArray();
-            var values = _forecast.Months.Select(x => x.Categories.Select(y => (double)y.Amount).ToArray()).ToArray();
-            var exact = _forecast.Months.Select(x => x.Categories.Select(y => Display.Money(y.Amount)).ToArray()).ToArray();
-            var totals = _forecast.Months.Select(x => Display.Money(x.Total)).ToArray();
-            await _module.InvokeVoidAsync("render", _canvas, labels, values, exact, totals);
-            _renderedDate = _forecast.AsOfDate;
+            var labels = forecast.Months.Select(x => x.Month.ToString("MMM yyyy")).ToArray();
+            var values = forecast.Months.Select(x => x.Categories.Select(y => (double)y.Amount).ToArray()).ToArray();
+            var exact = forecast.Months.Select(x => x.Categories.Select(y => Display.Money(y.Amount)).ToArray()).ToArray();
+            var totals = forecast.Months.Select(x => Display.Money(x.Total)).ToArray();
+            var series = forecast.Months[0].Categories.Select(x => Display.SavingsCategoryName(x.Type)).ToArray();
+            _chartError = await RenderChartAsync(_canvas, labels, values, exact, totals, series);
+            var purposeValues = forecast.Months.Select(x => x.PurposeCategories.Select(y => (double)y.Amount).ToArray()).ToArray();
+            var purposeExact = forecast.Months.Select(x => x.PurposeCategories.Select(y => Display.Money(y.Amount)).ToArray()).ToArray();
+            var purposeSeries = forecast.Months[0].PurposeCategories.Select(x => Display.PurposeCategoryName(x.Category)).ToArray();
+            _purposeChartError = await RenderChartAsync(_purposeCanvas, labels, purposeValues, purposeExact, totals, purposeSeries);
         }
         catch (JSException)
         {
             _chartError = "The interactive chart could not be loaded.";
-            _renderedDate = _forecast.AsOfDate;
+            _purposeChartError = "The interactive category chart could not be loaded.";
+        }
+        finally
+        {
+            _renderedForecast = forecast;
+            _rendering = false;
+        }
+        if (!ReferenceEquals(_forecast, forecast) || previousError != _chartError || previousPurposeError != _purposeChartError)
             StateHasChanged();
+    }
+
+    private async Task<string?> RenderChartAsync(ElementReference canvas, string[] labels,
+        double[][] values, string[][] exact, string[] totals, string[] series)
+    {
+        try
+        {
+            await _module!.InvokeVoidAsync("render", canvas, labels, values, exact, totals, series);
+            return null;
+        }
+        catch (JSException)
+        {
+            return "The interactive chart could not be loaded.";
         }
     }
 
@@ -128,6 +198,7 @@ else
             try
             {
                 await _module.InvokeVoidAsync("dispose", _canvas);
+                await _module.InvokeVoidAsync("dispose", _purposeCanvas);
                 await _module.DisposeAsync();
             }
             catch (JSDisconnectedException) { }

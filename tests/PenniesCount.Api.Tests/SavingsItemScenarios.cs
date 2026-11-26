@@ -12,6 +12,200 @@ namespace PenniesCount.Api.Tests;
 
 public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixture<DatabaseFactory>
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public async Task Given_a_selected_purpose_category_When_creating_Then_it_is_persisted(int category)
+    {
+        using var client = factory.CreateClient();
+        using var created = await client.PostAsJsonAsync("/api/savings-items", new
+        {
+            Name = "  Categorised example  ", TargetAmount = 100m, AllocatedAmount = 25m,
+            StartDate = new DateOnly(2027, 1, 1), TargetDate = new DateOnly(2027, 4, 1), Category = category
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var json = await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(category, json.GetProperty("category").GetInt32());
+        Assert.Equal("Categorised example", json.GetProperty("name").GetString());
+        var loaded = await client.GetFromJsonAsync<System.Text.Json.JsonElement>(created.Headers.Location);
+        Assert.Equal(category, loaded.GetProperty("category").GetInt32());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(-1)]
+    [InlineData(9)]
+    public async Task Given_a_missing_or_invalid_purpose_category_When_creating_Then_it_is_rejected(int? category)
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/api/savings-items", new
+        {
+            Name = "Invalid category example", TargetAmount = 100m,
+            StartDate = new DateOnly(2027, 1, 1), TargetDate = new DateOnly(2027, 4, 1), Category = category
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(problem.GetProperty("errors").TryGetProperty("Category", out _));
+    }
+
+    [Fact]
+    public async Task Given_an_omitted_purpose_category_When_creating_Then_it_is_rejected()
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/api/savings-items", new
+        {
+            Name = "Missing category example", TargetAmount = 100m,
+            StartDate = new DateOnly(2027, 1, 1), TargetDate = new DateOnly(2027, 4, 1)
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Given_an_item_When_editing_details_Then_only_metadata_changes_and_versions_protect_all_writes()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+            new DateTimeOffset(2027, 1, 15, 12, 0, 0, TimeSpan.Zero));
+        await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var client = host.CreateClient();
+        var original = await CreateAsync(client, 25m);
+        var ledger = (await client.GetFromJsonAsync<SavingsLedgerResponse>($"/api/savings-items/{original.Id}/ledger"))!;
+        Assert.Equal("Initial allocation", Assert.Single(ledger.Entries).Description);
+        var item = original;
+        var deadline = new DateOnly(2033, 1, 16);
+        foreach (var category in Enum.GetValues<SavingsCategory>())
+        {
+            using var edited = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/details", new
+            {
+                Name = $"  Renamed {category}  ", TargetDate = deadline, Category = category, item.Version
+            });
+            Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+            var updated = (await edited.Content.ReadFromJsonAsync<SavingsItemResponse>())!;
+            Assert.NotEqual(item.Version, updated.Version);
+            Assert.Equal(original with
+            {
+                Name = $"Renamed {category}", Category = category, TargetDate = deadline,
+                Type = SavingsTerm.Long, Version = updated.Version
+            }, updated);
+            Assert.Equal(updated, await client.GetFromJsonAsync<SavingsItemResponse>($"/api/savings-items/{item.Id}"));
+            var afterLedger = (await client.GetFromJsonAsync<SavingsLedgerResponse>($"/api/savings-items/{item.Id}/ledger"))!;
+            Assert.Equal(ledger.Entries, afterLedger.Entries);
+            item = updated;
+        }
+
+        var budget = (await client.GetFromJsonAsync<DashboardResponse>("/api/dashboard"))!;
+        var row = budget.Groups.Single(x => x.Type == SavingsTerm.Long).Items.Single(x => x.Item.Id == item.Id);
+        Assert.Equal(item, row.Item);
+        Assert.Equal(72, row.RemainingPayments);
+        Assert.Equal(1.05m, row.RequiredContribution);
+        using var staleDetails = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/details", new
+        {
+            Name = "Stale", TargetDate = item.TargetDate, Category = SavingsCategory.Other, original.Version
+        });
+        using var staleAllocation = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/allocation",
+            new UpdateAllocationRequest { AllocatedAmount = 50m, Version = original.Version });
+        using var stalePayment = await client.PostAsJsonAsync($"/api/savings-items/{item.Id}/payments",
+            new RecordPaymentRequest { Amount = 1m, PaidOn = new(2027, 1, 15), Version = original.Version });
+        Assert.Equal(HttpStatusCode.Conflict, staleDetails.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, staleAllocation.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, stalePayment.StatusCode);
+        Assert.Equal(item, await client.GetFromJsonAsync<SavingsItemResponse>($"/api/savings-items/{item.Id}"));
+        using var unchanged = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/details",
+            new UpdateSavingsItemDetailsRequest
+            {
+                Name = item.Name, TargetDate = item.TargetDate, Category = item.Category, Version = item.Version
+            });
+        unchanged.EnsureSuccessStatusCode();
+        var sameDetails = (await unchanged.Content.ReadFromJsonAsync<SavingsItemResponse>())!;
+        Assert.NotEqual(item.Version, sameDetails.Version);
+        Assert.Equal(item with { Version = sameDetails.Version }, sameDetails);
+        using var boundary = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/details",
+            new UpdateSavingsItemDetailsRequest
+            {
+                Name = item.Name, TargetDate = item.StartDate, Category = item.Category, Version = sameDetails.Version
+            });
+        boundary.EnsureSuccessStatusCode();
+        var past = (await boundary.Content.ReadFromJsonAsync<SavingsItemResponse>())!;
+        Assert.Equal(SavingsTerm.Past, past.Type);
+        var pastBudget = (await client.GetFromJsonAsync<DashboardResponse>("/api/dashboard"))!;
+        var pastRow = pastBudget.Groups.Single(x => x.Type == SavingsTerm.Past).Items.Single(x => x.Item.Id == item.Id);
+        Assert.Equal(75m, pastRow.RequiredContribution);
+        Assert.Equal(ContributionState.NeededNow, pastRow.Status);
+    }
+
+    [Theory]
+    [InlineData("", "2027-04-01", 1, "Name")]
+    [InlineData("   ", "2027-04-01", 1, "Name")]
+    [InlineData("Example", "0001-01-01", 1, "TargetDate")]
+    [InlineData("Example", "2026-12-31", 1, "TargetDate")]
+    [InlineData("Example", "2027-04-01", null, "Category")]
+    [InlineData("Example", "2027-04-01", -1, "Category")]
+    [InlineData("Example", "2027-04-01", 9, "Category")]
+    public async Task Given_invalid_details_When_editing_Then_validation_leaves_the_item_unchanged(
+        string name, string target, int? category, string field)
+    {
+        using var client = factory.CreateClient();
+        var item = await CreateAsync(client, 25m);
+        using var response = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/details", new
+        {
+            Name = name, TargetDate = DateOnly.Parse(target), Category = category, item.Version
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(problem.GetProperty("errors").TryGetProperty(field, out _));
+        var errors = problem.GetProperty("errors").GetProperty(field);
+        Assert.True(errors.GetArrayLength() > 0);
+        Assert.All(errors.EnumerateArray(), error => Assert.False(string.IsNullOrWhiteSpace(error.GetString())));
+        Assert.Equal(item, await client.GetFromJsonAsync<SavingsItemResponse>($"/api/savings-items/{item.Id}"));
+    }
+
+    [Fact]
+    public async Task Given_removed_or_missing_items_When_editing_details_Then_the_write_is_rejected()
+    {
+        using var client = factory.CreateClient();
+        var item = await CreateAsync(client, 25m);
+        using var removal = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/removal",
+            new ItemVersionRequest { Version = item.Version });
+        removal.EnsureSuccessStatusCode();
+        item = (await removal.Content.ReadFromJsonAsync<SavingsItemResponse>())!;
+        var request = new { Name = "Changed", TargetDate = new DateOnly(2027, 4, 1), Category = 2, item.Version };
+        using var removed = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/details", request);
+        using var missing = await client.PutAsJsonAsync($"/api/savings-items/{Guid.NewGuid()}/details", request);
+        Assert.Equal(HttpStatusCode.Conflict, removed.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal(item, await client.GetFromJsonAsync<SavingsItemResponse>($"/api/savings-items/{item.Id}"));
+    }
+
+    [Theory]
+    [InlineData(101, "AAAAAAAAAAA=", "Name")]
+    [InlineData(10, "", "Version")]
+    [InlineData(10, "not-a-version", "Version")]
+    public async Task Given_an_overlong_name_or_invalid_version_When_editing_details_Then_it_is_rejected(
+        int nameLength, string version, string field)
+    {
+        using var client = factory.CreateClient();
+        var item = await CreateAsync(client, 25m);
+        using var response = await client.PutAsJsonAsync($"/api/savings-items/{item.Id}/details",
+            new UpdateSavingsItemDetailsRequest
+            {
+                Name = new string('x', nameLength), TargetDate = item.TargetDate, Category = item.Category, Version = version
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(problem.GetProperty("errors").TryGetProperty(field, out _));
+        Assert.Equal(item, await client.GetFromJsonAsync<SavingsItemResponse>($"/api/savings-items/{item.Id}"));
+    }
+
     [Fact]
     public async Task Given_an_item_When_changing_allocations_Then_only_allocation_changes_and_stale_updates_conflict()
     {
@@ -66,6 +260,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
             using var created = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
             {
                 Name = "Boundary example",
+                Category = SavingsCategory.Other,
                 TargetAmount = 100m,
                 StartDate = DateOnly.Parse(target),
                 TargetDate = DateOnly.Parse(target)
@@ -100,6 +295,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
             using var created = await client.PostAsJsonAsync("/api/savings-items", new
             {
                 Name = "Rollover example",
+                Category = SavingsCategory.Other,
                 Type = SavingsTerm.Short,
                 TargetAmount = 100m,
                 AllocatedAmount = 25m,
@@ -166,11 +362,23 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
                 Assert.Equal(before.Name, after.Name);
                 Assert.Equal(Convert.ToBase64String(before.Version), after.Version);
                 Assert.Equal(SavingsTerm.Short, after.Type);
+                Assert.Null(after.Category);
                 Assert.Equal(100m, after.TargetAmount);
                 Assert.Equal(25m, after.AllocatedAmount);
                 Assert.Equal(start, after.StartDate);
                 Assert.Equal(target, after.TargetDate);
                 Assert.False(db.Database.HasPendingModelChanges());
+                using var client = isolated.CreateClient();
+                using var edited = await client.PutAsJsonAsync($"/api/savings-items/{id}/details",
+                    new UpdateSavingsItemDetailsRequest
+                    {
+                        Name = after.Name, TargetDate = start, Category = SavingsCategory.EmergencyFund, Version = after.Version
+                    });
+                edited.EnsureSuccessStatusCode();
+                var categorised = (await edited.Content.ReadFromJsonAsync<SavingsItemResponse>())!;
+                Assert.Equal(SavingsCategory.EmergencyFund, categorised.Category);
+                Assert.Equal(start, categorised.TargetDate);
+                Assert.Equal(25m, categorised.AllocatedAmount);
             }
             finally
             {
@@ -215,6 +423,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
         using var response = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "Example goal",
+            Category = SavingsCategory.Other,
             TargetAmount = target,
             AllocatedAmount = allocation,
             StartDate = new(2027, 1, 1),
@@ -228,7 +437,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
     {
         using var client = factory.CreateClient();
         using var dates = await client.PostAsJsonAsync("/api/savings-items",
-            new CreateSavingsItemRequest { Name = "Example goal", TargetAmount = 100m });
+            new CreateSavingsItemRequest { Name = "Example goal", Category = SavingsCategory.Other, TargetAmount = 100m });
         Assert.Equal(HttpStatusCode.BadRequest, dates.StatusCode);
     }
 
@@ -237,6 +446,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
         using var response = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "Example goal",
+            Category = SavingsCategory.Other,
             TargetAmount = 100m,
             AllocatedAmount = allocation,
             StartDate = new(2027, 1, 1),

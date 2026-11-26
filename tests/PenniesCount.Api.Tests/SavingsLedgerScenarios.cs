@@ -223,6 +223,7 @@ public sealed class SavingsLedgerScenarios : IAsyncLifetime
         using var response = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "Car service", TargetAmount = 1000m, AllocatedAmount = allocation,
+            Category = SavingsCategory.Transport,
             StartDate = new(2026, 12, 1), TargetDate = new(2027, 6, 1)
         });
         response.EnsureSuccessStatusCode();

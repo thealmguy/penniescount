@@ -52,6 +52,7 @@ public sealed class DashboardWorkingDayScenarios(DatabaseFactory factory) : ICla
         using var creation = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "Beyond holiday coverage",
+            Category = SavingsCategory.Other,
             TargetAmount = 100m,
             StartDate = new(2027, 1, 1),
             TargetDate = new(2029, 1, 1)
@@ -93,6 +94,7 @@ public sealed class DashboardWorkingDayScenarios(DatabaseFactory factory) : ICla
         using var creation = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "January goal",
+            Category = SavingsCategory.Other,
             TargetAmount = 100m,
             StartDate = new(2027, 1, 1),
             TargetDate = new(2027, 1, 1)

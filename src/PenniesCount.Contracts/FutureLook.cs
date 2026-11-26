@@ -3,8 +3,14 @@ namespace PenniesCount.Contracts;
 /// <summary>A category's projected funding in one calendar month.</summary>
 public sealed record ForecastCategoryResponse(SavingsTerm Type, decimal Amount);
 
+/// <summary>Projected funding by purpose; a null category represents uncategorised legacy items.</summary>
+public sealed record ForecastPurposeCategoryResponse(SavingsCategory? Category, decimal Amount);
+
 /// <summary>Projected payments for one month, including all category values and their total.</summary>
-public sealed record ForecastMonthResponse(DateOnly Month, ForecastCategoryResponse[] Categories, decimal Total);
+public sealed record ForecastMonthResponse(DateOnly Month, ForecastCategoryResponse[] Categories, decimal Total)
+{
+    public ForecastPurposeCategoryResponse[] PurposeCategories { get; init; } = [];
+}
 
 /// <summary>A goal with no eligible payment date before its deadline, requiring immediate funding.</summary>
 public sealed record ForecastAttentionResponse(Guid ItemId, string Name, decimal Amount);

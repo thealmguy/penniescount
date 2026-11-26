@@ -39,12 +39,14 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         using var future = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "Future example", TargetAmount = 100m, AllocatedAmount = 50m,
+            Category = SavingsCategory.Other,
             StartDate = new(2027, 2, 1), TargetDate = new(2027, 3, 1)
         });
         future.EnsureSuccessStatusCode();
         using var urgent = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
         {
             Name = "Urgent example", TargetAmount = 100m,
+            Category = SavingsCategory.Other,
             StartDate = new(2027, 1, 1), TargetDate = new(2027, 1, 31)
         });
         urgent.EnsureSuccessStatusCode();
@@ -52,7 +54,8 @@ public sealed class DashboardScenarios(DatabaseFactory factory) : IClassFixture<
         {
             using var tied = await client.PostAsJsonAsync("/api/savings-items", new CreateSavingsItemRequest
             {
-                Name = name, TargetAmount = 100m, StartDate = new(2027, 2, 1), TargetDate = new(2027, 3, 1)
+                Name = name, TargetAmount = 100m, StartDate = new(2027, 2, 1), TargetDate = new(2027, 3, 1),
+                Category = SavingsCategory.Other
             });
             tied.EnsureSuccessStatusCode();
         }

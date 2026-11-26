@@ -1,11 +1,12 @@
 const instances = new WeakMap();
-const colors = ["#1b6ec2", "#2d7f5e", "#8a5bb5", "#a24a3b"];
+const colors = ["#1b6ec2", "#2d7f5e", "#8a5bb5", "#a24a3b", "#ae7400",
+    "#147d92", "#ba4b83", "#566322", "#595959", "#969696"];
 const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
 
-export function render(canvas, labels, values, exact, totals) {
+export function render(canvas, labels, values, exact, totals, series) {
     if (!window.Chart) throw new Error("Chart.js is unavailable.");
     instances.get(canvas)?.destroy();
-    const datasets = ["Short term", "Medium term", "Long term", "Historic"].map((label, index) => ({
+    const datasets = series.map((label, index) => ({
         label,
         data: values.map(month => month[index]),
         exact: exact.map(month => month[index]),

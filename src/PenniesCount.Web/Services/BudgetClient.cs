@@ -30,6 +30,8 @@ public sealed class BudgetClient(HttpClient http)
         SendAsync<SavingsItemResponse>(HttpMethod.Post, "api/savings-items", request);
     public Task<SavingsItemResponse> UpdateAllocationAsync(Guid id, UpdateAllocationRequest request) =>
         SendAsync<SavingsItemResponse>(HttpMethod.Put, $"api/savings-items/{id}/allocation", request);
+    public Task<SavingsItemResponse> UpdateItemDetailsAsync(Guid id, UpdateSavingsItemDetailsRequest request) =>
+        SendAsync<SavingsItemResponse>(HttpMethod.Put, $"api/savings-items/{id}/details", request);
 
     private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body = null)
     {
