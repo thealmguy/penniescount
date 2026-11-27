@@ -7,7 +7,7 @@ param(
 trap { Write-Error (Protect-DeploymentMessage $_.Exception.Message) -ErrorAction Continue; exit 1 }
 
 Assert-DeploymentAccount
-$users = Get-DeploymentVariable PCS_ALLOWED_USER_OBJECT_IDS | ConvertFrom-Json
+$users = Get-DeploymentVariable PCS_ALLOWED_USER_OBJECT_IDS | ConvertFrom-Json -NoEnumerate
 if ($users -isnot [array] -or $users.Count -eq 0) {
     throw 'PCS_ALLOWED_USER_OBJECT_IDS must be a nonempty JSON array of user object IDs.'
 }
