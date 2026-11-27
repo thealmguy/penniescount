@@ -284,6 +284,15 @@ listing: a subscription can report an F1 allowance there while provisioning
 fails with `SubscriptionIsOverQuotaForSku` and a zero limit. This deployment
 requires one plan instance. Request quota through Azure Quotas/support or
 explicitly approve another region before retrying; no paid fallback is applied.
+F1 quota differs per region, so validate a candidate region at resource-group
+scope (subscription-scope validation does not preflight nested deployments),
+then change the `location` variable; it applies to the plan, SQL server and apps.
+Moving an existing environment to a new region needs the old shared resources
+removed first, because the names are reused.
+
+Entra app registrations replicate asynchronously in Microsoft Graph. The first
+app deployment can therefore fail transiently; `Deploy-Infra.ps1` retries
+replication errors (up to four attempts) because the deployment is idempotent.
 
 For production, invoke the same deploy stage template with a separate stage
 name, `environment: pcs-prd`, `variableGroup: pcs-prd`, and its own federated
