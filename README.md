@@ -118,7 +118,7 @@ Licensed under [MIT](LICENSE).
 
 ## Development approach
 
-Always use small iterative changes, through a test driven development approach where possible, applying BDD-style testing. Always cover non-trivial logic with tests. Apply mutation testing to help ensure tests are robust and test the right thing. Commit and push after each iteration is green and all mutants are killed.
+Always use small iterative changes, through a test driven development approach where possible, applying BDD-style testing. Always cover non-trivial logic with tests. Once the work is code-complete, and has green tests and builds, apply an adversarial review. Use this review to ensure that acceptance criteria or requirements have been met, code hygiene, structure and maintainability, opportunities to refactor. Act on this feedback. Repeat this a maximum of 3 times. If after this there are outstanding points where the adversarial review outcome is that the acceptance criteria or requirements are not met, defer to the human operator clearly explaining the gap and allow them to give feedback on next steps. Finally, apply mutation testing to help ensure tests are robust and test the right thing. Commit and push after each iteration is green and all mutants are killed.
 
 ## Accounts and savings items
 
