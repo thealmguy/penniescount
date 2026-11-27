@@ -18,12 +18,26 @@ if ($freeLimit -and -not (Get-DeploymentVariable PCS_SQL_SKU_NAME).StartsWith('G
 }
 
 foreach ($template in 'shared', 'app') {
-    $null = Invoke-AzureCli @(
-        'deployment', 'sub', 'create',
-        '--name', "$DeploymentName-$template",
-        '--location', (Get-DeploymentVariable PCS_LOCATION),
-        '--parameters', (Join-Path $InfraDirectory "$template.bicepparam"),
-        '-o', 'none'
-    )
+    # Graph objects created by the app template replicate asynchronously, so dependent
+    # Graph operations can briefly fail; the deployment is idempotent and safe to repeat.
+    $maxAttempts = 4
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            $null = Invoke-AzureCli @(
+                'deployment', 'sub', 'create',
+                '--name', "$DeploymentName-$template",
+                '--location', (Get-DeploymentVariable PCS_LOCATION),
+                '--parameters', (Join-Path $InfraDirectory "$template.bicepparam"),
+                '-o', 'none'
+            )
+            break
+        }
+        catch {
+            $transient = $_.Exception.Message -match 'Request_ResourceNotFound|cannot be found|local tenant'
+            if (-not $transient -or $attempt -ge $maxAttempts) { throw }
+            Write-Warning "$template deployment hit Graph replication delay (attempt $attempt of $maxAttempts); retrying."
+            Start-Sleep -Seconds 60
+        }
+    }
     Write-Host "$template infrastructure deployed."
 }
