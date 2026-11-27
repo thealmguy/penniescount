@@ -9,11 +9,10 @@ using PenniesCount.Contracts;
 
 namespace PenniesCount.Api.Tests;
 
-public sealed class FutureLookScenarios : IAsyncLifetime
+public sealed class FutureLookScenarios(DatabaseFactory factory) : IClassFixture<DatabaseFactory>, IAsyncLifetime
 {
-    private readonly DatabaseFactory factory = new();
-    public Task InitializeAsync() => factory.InitializeAsync();
-    public Task DisposeAsync() => ((IAsyncLifetime)factory).DisposeAsync();
+    public Task InitializeAsync() => factory.ResetAsync();
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task Given_all_purpose_categories_and_legacy_items_When_forecasting_Then_both_groupings_reconcile_and_edits_move_funding()

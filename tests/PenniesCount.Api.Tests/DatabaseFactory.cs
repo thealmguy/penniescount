@@ -30,14 +30,32 @@ public sealed class DatabaseFactory : WebApplicationFactory<Program>, IAsyncLife
         await scope.ServiceProvider.GetRequiredService<SavingsDbContext>().Database.MigrateAsync();
     }
 
+    public async Task ResetAsync()
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SavingsDbContext>();
+        VerifyDatabase(db);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await db.LedgerEntries.ExecuteDeleteAsync();
+        await db.SavingsItems.ExecuteDeleteAsync();
+        await db.BalanceSnapshots.ExecuteDeleteAsync();
+        await db.Accounts.ExecuteDeleteAsync();
+        await transaction.CommitAsync();
+    }
+
     async Task IAsyncLifetime.DisposeAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SavingsDbContext>();
-        if (db.Database.GetDbConnection().Database != _database)
-            throw new InvalidOperationException("Refusing to delete an unexpected test database.");
+        VerifyDatabase(db);
         await db.Database.EnsureDeletedAsync();
         await DisposeAsync();
+    }
+
+    private void VerifyDatabase(SavingsDbContext db)
+    {
+        if (db.Database.GetDbConnection().Database != _database)
+            throw new InvalidOperationException("Refusing to reset or delete an unexpected test database.");
     }
 
     private sealed class FakeBankHolidayProvider : IBankHolidayProvider

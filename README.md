@@ -56,7 +56,9 @@ dotnet build .\PenniesCount.sln
 dotnet test .\PenniesCount.sln
 ```
 
-Run mutation testing for the date-derived savings category policy:
+The full mutation gate comprises the following four runs. Start with the
+database-free API gate for the savings term policy, ledger entity rules,
+future-look calculations, and holiday parsing and caching:
 
 ```powershell
 Push-Location .\tests\PenniesCount.Api.Tests
@@ -70,14 +72,7 @@ Push-Location .\tests\PenniesCount.Core.Tests
 try { dotnet stryker --config-file stryker-working-days.json } finally { Pop-Location }
 ```
 
-Run mutation testing for holiday parsing and caching:
-
-```powershell
-Push-Location .\tests\PenniesCount.Api.Tests
-try { dotnet stryker --config-file stryker-holidays.json } finally { Pop-Location }
-```
-
-Run the savings ledger gate in the same test directory:
+Run the database-backed savings ledger gate:
 
 ```powershell
 Push-Location .\tests\PenniesCount.Api.Tests
@@ -92,7 +87,7 @@ try { dotnet stryker --config-file stryker-details-validation.json } finally { P
 ```
 
 The ledger configuration targets the ledger, payment, reversal and drawdown
-endpoints, category creation and details editing, the ledger entity rules, and
+endpoints, category creation and details editing, and
 the item and dashboard code (including purpose-category summaries) that reads
 or writes ledger entries. It requires 100% and excludes logging
 calls/logger category names and database-generated/default entity initializers
@@ -100,13 +95,14 @@ from mutation, not financial logic. It runs four test sessions in parallel,
 each against its own LocalDB databases, and takes several minutes. Its character spans isolate changed logic
 in existing files; update those spans when that code moves. The forecast and
 details endpoints' non-financial OpenAPI name and description
-strings are outside their mutation spans. The forecast span includes both term
-and purpose-category aggregation.
+strings are outside their mutation spans. The ledger gate retains the
+future-look route and database-backed behavior; its term and purpose
+aggregation are covered by the database-free gate.
 All mutation configurations use local reports
 only; no code or reports are uploaded.
 
-The committed Stryker configuration uses the Complete mutation level and
-requires a 100% mutation score for `SavingsTermClassifier`. Strengthen tests for
+The Stryker configurations use the Complete mutation level and
+require a 100% mutation score. Strengthen tests for
 surviving mutants, then rerun mutation testing and the full test suite before
 committing and pushing a green iteration. Local reports are written under
 `StrykerOutput` and are not committed.

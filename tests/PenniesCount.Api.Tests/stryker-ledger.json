@@ -4,12 +4,10 @@
     "mutate": [
       "**/SavingsDrawdownEndpoints.cs",
       "**/SavingsLedgerEndpoints.cs",
-      "**/Data/SavingsItem.cs{708..2516}",
-      "**/Data/SavingsLedgerEntry.cs{591..1293}",
       "**/SavingsItemEndpoints.cs{513..680}{1118..1246}{1817..2225}{3271..4119}{4346..5575}",
       "**/DashboardEndpoints.cs{1160..1450}{2370..2510}{2926..4429}",
       "**/BudgetSnapshot.cs{1180..1280}",
-      "**/FutureLookEndpoints.cs{0..2658}"
+      "**/FutureLookEndpoints.cs{0..550}"
     ],
     "test-case-filter": "FullyQualifiedName~SavingsDrawdownScenarios|FullyQualifiedName~SavingsLedgerScenarios|(FullyQualifiedName~SavingsItemScenarios&FullyQualifiedName!~SavingsCategoryScenarios)|FullyQualifiedName~DashboardScenarios|FullyQualifiedName~FutureLookScenarios|FullyQualifiedName~Given_a_payment_on_the_first_working_day",
     "mutation-level": "Complete",

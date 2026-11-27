@@ -1,10 +1,19 @@
 {
   "stryker-config": {
     "project": "PenniesCount.Api.csproj",
-    "mutate": [ "**/SavingsTermClassifier.cs" ],
-    "test-case-filter": "FullyQualifiedName~SavingsCategoryScenarios",
+    "mutate": [
+      "**/SavingsTermClassifier.cs",
+      "**/Data/SavingsItem.cs{708..2516}",
+      "**/Data/SavingsLedgerEntry.cs{591..1293}",
+      "**/FutureLookProjection.cs",
+      "**/Holidays/BankHolidayCalendar.cs",
+      "**/Holidays/GovUkBankHolidayParser.cs",
+      "**/Holidays/GovUkBankHolidayProvider.cs"
+    ],
+    "test-case-filter": "FullyQualifiedName~SavingsTermClassifierScenarios|FullyQualifiedName~SavingsLedgerEntityScenarios|FullyQualifiedName~FutureLookProjectionScenarios|FullyQualifiedName~GovUkBankHolidayProviderScenarios",
     "mutation-level": "Complete",
-    "concurrency": 1,
+    "concurrency": 4,
+    "ignore-methods": [ "*LogWarning" ],
     "reporters": [ "progress", "cleartext", "html", "json" ],
     "thresholds": {
       "high": 100,
