@@ -24,14 +24,15 @@ resource web 'Microsoft.Graph/applications@v1.0' = {
       enableIdTokenIssuance: false
     }
   }
-  resource federation 'federatedIdentityCredentials@v1.0' = {
-    name: 'app-service'
-    issuer: '${environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
-    subject: webPrincipalId
-    audiences: [
-      'api://AzureADTokenExchange'
-    ]
-  }
+}
+
+resource webFederation 'Microsoft.Graph/applications/federatedIdentityCredentials@v1.0' = {
+  name: '${web.uniqueName}/app-service'
+  issuer: '${environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
+  subject: webPrincipalId
+  audiences: [
+    'api://AzureADTokenExchange'
+  ]
 }
 
 resource api 'Microsoft.Graph/applications@v1.0' = {
