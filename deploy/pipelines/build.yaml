@@ -1,0 +1,89 @@
+parameters:
+  - name: runMutation
+    type: boolean
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildTest
+        pool:
+          vmImage: windows-2025
+        steps:
+          - checkout: self
+            persistCredentials: false
+          - task: UseDotNet@2
+            inputs:
+              packageType: sdk
+              useGlobalJson: true
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              $PSNativeCommandUseErrorActionPreference = $true
+              sqllocaldb start MSSQLLocalDB
+              dotnet tool restore
+              dotnet restore .\PenniesCount.sln
+              dotnet build .\PenniesCount.sln --configuration Release --no-restore
+              dotnet test .\PenniesCount.sln --configuration Release --no-build --logger trx --results-directory "$(Agent.TempDirectory)\test-results"
+            displayName: Build and test
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/test-results/**/*.trx'
+              failTaskOnFailedTests: true
+              failTaskOnMissingResultsFile: true
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              $PSNativeCommandUseErrorActionPreference = $true
+              $root = "$(Build.ArtifactStagingDirectory)"
+              foreach ($name in 'Api', 'Web') {
+                $publish = "$(Agent.TempDirectory)\publish-$name"
+                dotnet publish ".\src\PenniesCount.$name" --configuration Release --no-build --output $publish
+                New-Item -ItemType Directory -Force "$root\$name" | Out-Null
+                Compress-Archive -Path "$publish\*" -DestinationPath "$root\$name\app.zip"
+              }
+              New-Item -ItemType Directory -Force "$root\db" | Out-Null
+              dotnet ef migrations script --idempotent --project .\src\PenniesCount.Api --configuration Release --no-build --output "$root\db\migrations.sql"
+              az bicep install --version v0.49.2
+              az bicep build --file .\deploy\infra\shared.bicep --outfile "$(Agent.TempDirectory)\shared.json"
+              az bicep build --file .\deploy\infra\app.bicep --outfile "$(Agent.TempDirectory)\app.json"
+              Copy-Item .\deploy "$root\deploy" -Recurse
+            env:
+              ASPNETCORE_ENVIRONMENT: Development
+            displayName: Package apps, migrations and infrastructure
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)'
+              artifact: deployment
+      - ${{ if parameters.runMutation }}:
+          - job: Mutation
+            pool:
+              vmImage: windows-2025
+            strategy:
+              matrix:
+                Ledger:
+                  gate: ledger
+                Api:
+                  gate: api
+                Core:
+                  gate: core
+                Contracts:
+                  gate: contracts
+            steps:
+              - checkout: self
+                persistCredentials: false
+              - task: UseDotNet@2
+                inputs:
+                  packageType: sdk
+                  useGlobalJson: true
+              - pwsh: |
+                  $ErrorActionPreference = 'Stop'
+                  $PSNativeCommandUseErrorActionPreference = $true
+                  sqllocaldb start MSSQLLocalDB
+                  dotnet tool restore
+                  .\scripts\mutation.ps1 -Gate "$(gate)"
+                displayName: Mutation gate
+              - task: PublishPipelineArtifact@1
+                condition: succeededOrFailed()
+                inputs:
+                  targetPath: '$(Build.SourcesDirectory)/StrykerOutput'
+                  artifact: 'mutation-$(gate)'

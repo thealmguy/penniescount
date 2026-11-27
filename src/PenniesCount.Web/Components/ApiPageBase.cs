@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using PenniesCount.Web.Services;
+using Microsoft.Identity.Web;
 
 namespace PenniesCount.Web.Components;
 
@@ -7,6 +8,7 @@ public abstract class ApiPageBase : ComponentBase
 {
     [Inject] protected BudgetClient Api { get; set; } = null!;
     [Inject] private ILogger<ApiPageBase> Logger { get; set; } = null!;
+    [Inject] private IServiceProvider Services { get; set; } = null!;
     protected bool Busy { get; private set; }
     protected string? Error { get; private set; }
 
@@ -21,6 +23,13 @@ public abstract class ApiPageBase : ComponentBase
         {
             await operation();
             return true;
+        }
+        catch (MicrosoftIdentityWebChallengeUserException exception)
+        {
+            Logger.LogWarning("API authentication requires user interaction.");
+            Services.GetRequiredService<MicrosoftIdentityConsentAndConditionalAccessHandler>()
+                .HandleException(exception);
+            Error = "Sign in again to continue.";
         }
         catch (ApiException exception)
         {

@@ -1,0 +1,17 @@
+using './app.bicep'
+
+param location = readEnvironmentVariable('PCS_LOCATION')
+param appResourceGroup = readEnvironmentVariable('PCS_APP_RESOURCE_GROUP')
+param sharedResourceGroup = readEnvironmentVariable('PCS_SHARED_RESOURCE_GROUP')
+param appServicePlanName = readEnvironmentVariable('PCS_APP_SERVICE_PLAN_NAME')
+param sqlServerName = readEnvironmentVariable('PCS_SQL_SERVER_NAME')
+param sqlDatabaseName = readEnvironmentVariable('PCS_SQL_DATABASE_NAME')
+param apiAppName = readEnvironmentVariable('PCS_API_APP_NAME')
+param webAppName = readEnvironmentVariable('PCS_WEB_APP_NAME')
+param entraAppNamePrefix = readEnvironmentVariable('PCS_ENTRA_APP_NAME_PREFIX')
+param allowedUserObjectIds = readEnvironmentVariable('PCS_ALLOWED_USER_OBJECT_IDS')
+param sqlSkuName = readEnvironmentVariable('PCS_SQL_SKU_NAME', 'GP_S_Gen5_2')
+param sqlUseFreeLimit = bool(readEnvironmentVariable('PCS_SQL_USE_FREE_LIMIT', 'true'))
+param sqlAutoPauseDelay = int(readEnvironmentVariable('PCS_SQL_AUTO_PAUSE_DELAY', '60'))
+param sqlMaxSizeBytes = int(readEnvironmentVariable('PCS_SQL_MAX_SIZE_BYTES', '34359738368'))
+param sqlMinCapacity = readEnvironmentVariable('PCS_SQL_MIN_CAPACITY', '0.5')

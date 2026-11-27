@@ -1,8 +1,9 @@
 using PenniesCount.Contracts;
+using System.Net.Http.Headers;
 
 namespace PenniesCount.Web.Services;
 
-public sealed class BudgetClient(HttpClient http)
+public sealed class BudgetClient(HttpClient http, IApiAccessTokenProvider? tokens = null) : IDisposable
 {
     public Task<HealthResponse> GetHealthAsync() => SendAsync<HealthResponse>(HttpMethod.Get, "api/health");
     public Task<AccountResponse[]> GetAccountsAsync() => SendAsync<AccountResponse[]>(HttpMethod.Get, "api/accounts");
@@ -36,6 +37,8 @@ public sealed class BudgetClient(HttpClient http)
     private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body = null)
     {
         using var request = new HttpRequestMessage(method, path);
+        if (tokens is not null)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await tokens.GetTokenAsync());
         if (body is not null) request.Content = JsonContent.Create(body, body.GetType());
         using var response = await http.SendAsync(request);
         await CheckResponseAsync(response);
@@ -69,6 +72,8 @@ public sealed class BudgetClient(HttpClient http)
     }
 
     private sealed record ApiProblem(string? Title, Dictionary<string, string[]>? Errors);
+
+    public void Dispose() => http.Dispose();
 }
 
 public sealed class ApiException(string message) : Exception(message);

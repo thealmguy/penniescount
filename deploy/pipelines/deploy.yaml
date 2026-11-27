@@ -1,0 +1,71 @@
+parameters:
+  - name: stageName
+    type: string
+  - name: environment
+    type: string
+  - name: variableGroup
+    type: string
+  - name: serviceConnection
+    type: string
+
+stages:
+  - stage: ${{ parameters.stageName }}
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+    variables:
+      - group: ${{ parameters.variableGroup }}
+    jobs:
+      - deployment: Deploy
+        environment: ${{ parameters.environment }}
+        pool:
+          vmImage: ubuntu-24.04
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: none
+                - download: current
+                  artifact: deployment
+                - pwsh: |
+                    Install-Module SqlServer -RequiredVersion 22.4.5.1 -Scope CurrentUser -Repository PSGallery -Force
+                  displayName: Install SQL deployment tooling
+                - task: AzureCLI@2
+                  displayName: Provision, migrate and deploy
+                  inputs:
+                    azureSubscription: ${{ parameters.serviceConnection }}
+                    scriptType: pscore
+                    scriptLocation: inlineScript
+                    visibleAzLogin: false
+                    inlineScript: |
+                      $ErrorActionPreference = 'Stop'
+                      $PSNativeCommandUseErrorActionPreference = $false
+                      az bicep install --version v0.49.2 --only-show-errors
+                      if ($LASTEXITCODE -ne 0) { throw 'Bicep installation failed.' }
+                      $root = "$(Pipeline.Workspace)/deployment"
+                      & "$root/deploy/scripts/Deploy-Infra.ps1" -InfraDirectory "$root/deploy/infra" -DeploymentName "pcs-$(Build.BuildId)"
+                      if ($LASTEXITCODE -ne 0) { throw 'Infrastructure deployment failed.' }
+                      & "$root/deploy/scripts/Invoke-SqlScript.ps1" -MigrationScript "$root/db/migrations.sql"
+                      if ($LASTEXITCODE -ne 0) { throw 'Database deployment failed.' }
+                      & "$root/deploy/scripts/Deploy-WebApps.ps1" -ApiPackage "$root/Api/app.zip" -WebPackage "$root/Web/app.zip"
+                      if ($LASTEXITCODE -ne 0) { throw 'Application deployment failed.' }
+                  env:
+                    PCS_TENANT_ID: $(azureTenantId)
+                    PCS_SUBSCRIPTION_ID: $(azureSubscriptionId)
+                    PCS_LOCATION: $(location)
+                    PCS_SHARED_RESOURCE_GROUP: $(sharedResourceGroup)
+                    PCS_APP_RESOURCE_GROUP: $(appResourceGroup)
+                    PCS_APP_SERVICE_PLAN_NAME: $(appServicePlanName)
+                    PCS_APP_SERVICE_PLAN_SKU: $(appServicePlanSku)
+                    PCS_SQL_SERVER_NAME: $(sqlServerName)
+                    PCS_SQL_DATABASE_NAME: $(sqlDatabaseName)
+                    PCS_SQL_ADMIN_GROUP_OBJECT_ID: $(sqlAdminGroupObjectId)
+                    PCS_SQL_ADMIN_GROUP_NAME: $(sqlAdminGroupName)
+                    PCS_SQL_SKU_NAME: $(sqlSkuName)
+                    PCS_SQL_USE_FREE_LIMIT: $(sqlUseFreeLimit)
+                    PCS_SQL_AUTO_PAUSE_DELAY: $(sqlAutoPauseDelay)
+                    PCS_SQL_MAX_SIZE_BYTES: $(sqlMaxSizeBytes)
+                    PCS_SQL_MIN_CAPACITY: $(sqlMinCapacity)
+                    PCS_API_APP_NAME: $(apiAppName)
+                    PCS_WEB_APP_NAME: $(webAppName)
+                    PCS_ENTRA_APP_NAME_PREFIX: $(entraAppNamePrefix)
+                    PCS_ALLOWED_USER_OBJECT_IDS: $(allowedUserObjectIds)

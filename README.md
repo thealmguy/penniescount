@@ -6,7 +6,8 @@ API; financial logic and SQL Server persistence live behind that API.
 ## Prerequisites
 
 - Windows, .NET 10 SDK, and SQL Server LocalDB (`(localdb)\MSSQLLocalDB`).
-- No authentication is implemented. Run on loopback only, not a shared network.
+- Local Development mode has no authentication. Run it on loopback only.
+  Outside Development, Entra authentication configuration is mandatory.
 - Never commit real financial data, spreadsheets, database files or secrets.
 
 ## Run locally
@@ -65,7 +66,8 @@ Run the full mutation gate, all four configurations below in parallel:
 Each gate runs in its own copy of the working tree, so builds never share `bin`
 output. The copies persist under `%TEMP%\PenniesCount.Mutation`. Each run mirrors
 the working tree into them but keeps each gate's `bin` and `obj`, so later runs
-skip a NuGet restore retry and build incrementally. If another run holds the
+skip a NuGet restore retry and build incrementally. Each copy restores before
+Stryker analyzes references, including when dependencies have changed. If another run holds the
 copies, the script uses slower fresh temporary copies instead. `-Clean` discards
 the persistent copies first. Reports are written to
 `StrykerOutput\parallel-<timestamp>`.
@@ -142,10 +144,151 @@ surviving mutants, then rerun mutation testing and the full test suite before
 committing and pushing a green iteration. Local reports are written under
 `StrykerOutput` and are not committed.
 
-Use fictional data for testing. Workbook imports, deployment and authentication
-are intentionally outside this first pass.
+Use fictional data for testing. Workbook imports are outside this first pass.
 
 Licensed under [MIT](LICENSE).
+
+## Azure deployment
+
+The public repository contains deployment logic, not environment identifiers.
+Never commit tenant/subscription IDs, Azure resource names, directory object IDs,
+hostnames, resolved parameter files, access tokens or cloud app settings.
+
+The root `azure-pipelines.yaml` has two stages:
+
+- **Build**: Windows Server 2025 (LocalDB), Release build, all tests, zipped API
+  and Web publish output, an idempotent EF migration script and compiled Bicep
+  validation. Deployment consumes only artifacts from this build.
+- **DeployDev**: main-branch builds only, through the dedicated Azure DevOps `pcs-dev`
+  environment. Provisions shared and project resources using Bicep, migrates
+  SQL, grants the API identity data-only permissions, deploys the packages and
+  verifies health, anonymous API rejection and the Web sign-in redirect.
+
+The optional `runMutation` queue-time parameter defaults to `true`. Its four
+matrix jobs use the existing MTP gate script (`-Gate ledger`, `api`, `core`,
+`contracts`); each has its own agent/workspace. Set it to `false` to remove
+the jobs entirely. Parallel execution depends on the organization's hosted-job
+quota; with one parallel job, they queue instead. Reports are restricted to
+pipeline artifacts; no Stryker dashboard uploads are configured.
+
+### One-time Azure DevOps setup
+
+Use an administrator account for these steps; do not give these administrative
+permissions to CI. The existing connection must be verified rather than assumed
+usable. The dev YAML uses the generic alias `pcs-azure-dev`; its actual identity
+and scope are stored privately in Azure DevOps.
+
+1. In the intended Azure DevOps project, create an **Azure Resource Manager**
+   service connection using **workload identity federation**, the current
+   **Entra issuer** and a dedicated app registration. Scope it to the intended
+   subscription. Do not authorize all pipelines. No client secret is needed.
+2. If preparing the app registration manually, run
+   `deploy/scripts/Initialize-DeploymentIdentity.ps1` locally as an Entra
+   administrator with Azure role-assignment permission. All arguments must come
+   from your private configuration:
+
+   ```powershell
+   .\deploy\scripts\Initialize-DeploymentIdentity.ps1 `
+     -TenantId $tenantId -SubscriptionId $subscriptionId `
+     -PipelineAppName $pipelineAppName -SqlAdminGroupName $sqlAdminGroupName `
+     -AdministratorObjectId $administratorObjectId `
+     -FederationIssuer $issuerFromServiceConnection `
+     -FederationSubject $subjectFromServiceConnection
+   ```
+
+   The script requires confirmation and is repeatable. It grants Contributor at
+   subscription scope (needed to create both resource groups) and only Graph
+   `Application.ReadWrite.OwnedBy`, with admin consent. It does **not** grant
+   `AppRoleAssignment.ReadWrite.All` or permission to grant Azure roles to other
+   identities. It creates a SQL administrator group containing the administrator
+   and pipeline principal; the pipeline app emits security-group claims.
+   Complete the federated service connection with the returned client ID.
+   Do not run this script in CI or publish its local output.
+3. Create a private variable group `pcs-dev` with the following schema.
+   **Mark every identifying value secret**:
+
+   | Secret variable | Meaning |
+   | --- | --- |
+   | `azureTenantId`, `azureSubscriptionId` | Target tenant and subscription |
+   | `location` | Azure region |
+   | `sharedResourceGroup`, `appResourceGroup` | Shared and project RG names |
+   | `appServicePlanName` | Shared Linux App Service plan |
+   | `sqlServerName`, `sqlDatabaseName` | Logical server and database |
+   | `sqlAdminGroupObjectId`, `sqlAdminGroupName` | SQL Entra administrator group |
+   | `apiAppName`, `webAppName` | Globally unique Web App names |
+   | `entraAppNamePrefix` | Environment-specific Entra application unique names |
+   | `allowedUserObjectIds` | Nonempty JSON array of permitted user object IDs |
+
+   Also create these non-identifying configuration variables (plain values):
+
+   | Variable | Dev value |
+   | --- | --- |
+   | `appServicePlanSku` | `F1` |
+   | `sqlSkuName` | `GP_S_Gen5_2` |
+   | `sqlUseFreeLimit` | `true` |
+   | `sqlAutoPauseDelay` | `60` |
+   | `sqlMaxSizeBytes` | `34359738368` |
+   | `sqlMinCapacity` | `0.5` |
+
+   Configure all entries: unresolved Azure DevOps variable references are not
+   defaults. The `.bicepparam` files read environment variables; they never hold
+   environment-specific literals.
+4. Create a pipeline pointing at the GitHub repository's
+   `azure-pipelines.yaml`, using the existing GitHub connection when authorized.
+   Permit only this pipeline to use its service connection and variable group.
+5. Create the dedicated `pcs-dev` environment rather than modifying a shared
+   environment used by other projects. Add **branch control checks**, requiring
+   `refs/heads/main`, to the service
+   connection, variable group and deployment environment. Deployment conditions
+   in YAML alone are not a security boundary against a malicious PR.
+   Disable fork-build secrets and same-permission fork builds; require approval
+   before building fork PRs. Restrict logs/artifacts and do not enable
+   `system.debug`. Azure resource names and URLs are not credentials, but
+   secret masking is not a substitute for access-controlled deployment logs.
+
+### Runtime identity and data
+
+Both apps use single-tenant Microsoft Entra authentication and enforce the
+configured user allowlist. The API additionally requires the delegated
+`access_as_user` scope. The Web acquires a delegated token for the signed-in
+user in the Blazor circuit's scope; it never sends an application-only token.
+The web managed identity is a federated credential for its app registration,
+so there is no client secret. Token caches are per process; a restart can
+require signing in again.
+
+The API uses a dedicated user-assigned managed identity for Azure SQL, with only
+`db_datareader` and `db_datawriter`. Pipeline migrations use the SQL Entra
+administrator identity, not the app identity. SQL user creation uses explicit
+SID/TYPE rather than Graph lookups. Migrations never run at app startup, and no
+financial data is seeded. Initial signed-in dashboard and disallowed-user checks
+must be verified interactively after the first successful deployment.
+
+The shared RG contains the App Service plan, SQL logical server **and database**.
+Azure SQL databases are child resources of the logical server and cannot be
+placed in a different RG; the database is tagged `project=PenniesCount`.
+The project RG contains both apps and the database managed identity.
+Incremental deployments do not delete other projects' databases.
+The shared template manages the server administrator and Azure-services firewall
+rule: coordinate ownership before reusing it from another project.
+
+F1 has no SLA, Always On, slots or VNet integration and has a daily CPU quota.
+The SQL firewall therefore allows Azure services, including other tenants:
+Entra authentication and database permissions remain required. The free SQL
+allowance auto-pauses on exhaustion instead of billing overages; availability
+can be interrupted, and waking a serverless database can be slow. The connection
+timeout/reconnect settings allow for this, while the Web still reports slow API
+calls explicitly. Free-tier eligibility and quotas must be checked in the target
+subscription; deployment does not silently substitute a paid SKU.
+
+For production, invoke the same deploy stage template with a separate stage
+name, `environment: pcs-prd`, `variableGroup: pcs-prd`, and its own federated
+service connection. Configure names, subscription and SQL/plan SKU
+settings in that private group, and add an environment approval. Migration and
+ZIP deployment are in-place: without slots, an F1 deployment may interrupt
+active Blazor circuits. An app-package rollback does not undo schema changes.
+For a paid DTU SKU such as `Basic`, set `sqlUseFreeLimit=false` and a compatible
+`sqlMaxSizeBytes` (for Basic, at most `2147483648`); serverless-only settings are
+omitted. A free allowance with an incompatible SKU is rejected explicitly.
 
 ## Development approach
 

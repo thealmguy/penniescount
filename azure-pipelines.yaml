@@ -1,0 +1,25 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+parameters:
+  - name: runMutation
+    type: boolean
+    default: true
+
+stages:
+  - template: deploy/pipelines/build.yaml
+    parameters:
+      runMutation: ${{ parameters.runMutation }}
+  - template: deploy/pipelines/deploy.yaml
+    parameters:
+      stageName: DeployDev
+      environment: pcs-dev
+      variableGroup: pcs-dev
+      serviceConnection: pcs-azure-dev

@@ -15,6 +15,9 @@ Reports are written to StrykerOutput\parallel-<timestamp>\<gate>.
 #>
 [CmdletBinding()]
 param(
+    [Alias('Gate')]
+    [ValidateSet('ledger', 'api', 'core', 'contracts')]
+    [string]$GateName,
     [int]$LedgerConcurrency = 5,
     [int]$ApiConcurrency = 2,
     [int]$CoreConcurrency = 1,
@@ -49,6 +52,7 @@ $gates = @(
     @{ Name = 'core'; Project = 'tests\PenniesCount.Core.Tests'; Config = 'stryker-working-days.json'; Concurrency = $CoreConcurrency }
     @{ Name = 'contracts'; Project = 'tests\PenniesCount.Web.Tests'; Config = 'stryker-details-validation.json'; Concurrency = $ContractsConcurrency }
 )
+if ($GateName) { $gates = @($gates | Where-Object Name -eq $GateName) }
 $allowed = 'Killed', 'Ignored', 'CompileError'
 $clock = [Diagnostics.Stopwatch]::StartNew()
 
@@ -58,6 +62,9 @@ try {
         robocopy $repo $copy /MIR /NFL /NDL /NJH /NJS /NP /R:1 /W:1 `
             /XD .git .vs .idea bin obj StrykerOutput TestResults /XF *.xlsx | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "Copying the working tree for the $($gate.Name) gate failed." }
+        # Stryker resolves references before its build; dependency changes must reach obj first.
+        & dotnet restore (Join-Path $copy $gate.Project) --verbosity quiet
+        if ($LASTEXITCODE -ne 0) { throw "Restoring dependencies for the $($gate.Name) gate failed." }
         $gate.Output = Join-Path $reports $gate.Name
         $gate.Log = Join-Path $reports "$($gate.Name).log"
         New-Item -ItemType Directory -Force -Path $gate.Output | Out-Null

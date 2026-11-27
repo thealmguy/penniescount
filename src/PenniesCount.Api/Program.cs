@@ -5,9 +5,34 @@ using PenniesCount.Api.Holidays;
 using PenniesCount.Api;
 using PenniesCount.Core;
 using System.Net.Http;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:5100");
+var useEntra = builder.Configuration.GetSection("AzureAd").Exists();
+if (!useEntra && !builder.Environment.IsDevelopment())
+    throw new InvalidOperationException("AzureAd configuration is required outside Development.");
+if (useEntra)
+{
+    var allowedUsers = builder.Configuration.GetSection("AllowedUserObjectIds").Get<string[]>()
+        ?? throw new InvalidOperationException("AllowedUserObjectIds is required.");
+    if (allowedUsers.Length == 0)
+        throw new InvalidOperationException("AllowedUserObjectIds must not be empty.");
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+    builder.Services.AddAuthorization(options =>
+    {
+        options.FallbackPolicy = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .RequireAssertion(context =>
+                context.User.FindAll("http://schemas.microsoft.com/identity/claims/scope")
+                    .Concat(context.User.FindAll("scp"))
+                    .Any(claim => claim.Value.Split(' ').Contains("access_as_user", StringComparer.Ordinal))
+                && allowedUsers.Contains(context.User.GetObjectId(), StringComparer.OrdinalIgnoreCase))
+            .Build();
+    });
+}
 builder.Services.AddProblemDetails();
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 builder.Services.AddSingleton(TimeProvider.System);
@@ -24,7 +49,12 @@ builder.Services.AddDbContext<SavingsDbContext>(options => options.UseSqlServer(
 var app = builder.Build();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
-app.MapGet("/api/health", () => new HealthResponse("Ready"));
+if (useEntra)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
+app.MapGet("/api/health", () => new HealthResponse("Ready")).AllowAnonymous();
 app.MapAccounts();
 app.MapSavingsItems();
 app.MapSavingsDrawdowns();
