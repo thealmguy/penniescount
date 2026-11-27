@@ -9,11 +9,24 @@ param webPrincipalId string
 
 var apiIdentifier = 'api://${tenant().tenantId}/${namePrefix}-api'
 var scopeId = guid(tenant().tenantId, namePrefix, 'access_as_user')
+var userRoleId = guid(tenant().tenantId, namePrefix, 'PenniesCount.User')
 
 resource web 'Microsoft.Graph/applications@v1.0' = {
   uniqueName: '${namePrefix}-web'
   displayName: '${namePrefix}-web'
   signInAudience: 'AzureADMyOrg'
+  appRoles: [
+    {
+      id: userRoleId
+      value: 'PenniesCount.User'
+      displayName: 'PenniesCount user'
+      description: 'Can sign in to and use PenniesCount.'
+      allowedMemberTypes: [
+        'User'
+      ]
+      isEnabled: true
+    }
+  ]
   web: {
     redirectUris: [
       'https://${webHostname}/signin-oidc'
@@ -69,8 +82,10 @@ resource apiPrincipal 'Microsoft.Graph/servicePrincipals@v1.0' = {
   appId: api.appId
 }
 
+// Users must be assigned the PenniesCount.User role on this enterprise application to sign in.
 resource webPrincipal 'Microsoft.Graph/servicePrincipals@v1.0' = {
   appId: web.appId
+  appRoleAssignmentRequired: true
 }
 
 @secure()

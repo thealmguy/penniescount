@@ -68,4 +68,3 @@ stages:
                     PCS_API_APP_NAME: $(apiAppName)
                     PCS_WEB_APP_NAME: $(webAppName)
                     PCS_ENTRA_APP_NAME_PREFIX: $(entraAppNamePrefix)
-                    PCS_ALLOWED_USER_OBJECT_IDS: $(allowedUserObjectIds)

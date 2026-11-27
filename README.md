@@ -217,7 +217,6 @@ and scope are stored privately in Azure DevOps.
    | `sqlAdminGroupObjectId`, `sqlAdminGroupName` | SQL Entra administrator group |
    | `apiAppName`, `webAppName` | Globally unique Web App names |
    | `entraAppNamePrefix` | Environment-specific Entra application unique names |
-   | `allowedUserObjectIds` | Nonempty JSON array of permitted user object IDs |
 
    Also create these non-identifying configuration variables (plain values):
 
@@ -248,9 +247,14 @@ and scope are stored privately in Azure DevOps.
 
 ### Runtime identity and data
 
-Both apps use single-tenant Microsoft Entra authentication and enforce the
-configured user allowlist. The API additionally requires the delegated
-`access_as_user` scope. The Web acquires a delegated token for the signed-in
+Both apps use single-tenant Microsoft Entra authentication. Access is granted by
+assigning users the `PenniesCount.User` app role on the Web application (see
+[Managing access](#managing-access)); the Web enterprise application requires
+assignment, so Entra refuses sign-in and token issuance for anyone else, and the
+Web re-checks the role claim. The API accepts only delegated tokens with the
+`access_as_user` scope that were issued to the Web client (`azp` must equal the
+`AuthorizedClientId` setting), so the Web role assignment governs API access too.
+The Web acquires a delegated token for the signed-in
 user in the Blazor circuit's scope; it never sends an application-only token.
 The web managed identity is a federated credential for its app registration,
 so there is no client secret. Token caches are per process; a restart can
@@ -260,8 +264,27 @@ The API uses a dedicated user-assigned managed identity for Azure SQL, with only
 `db_datareader` and `db_datawriter`. Pipeline migrations use the SQL Entra
 administrator identity, not the app identity. SQL user creation uses explicit
 SID/TYPE rather than Graph lookups. Migrations never run at app startup, and no
-financial data is seeded. Initial signed-in dashboard and disallowed-user checks
+financial data is seeded. Initial signed-in dashboard and unassigned-user checks
 must be verified interactively after the first successful deployment.
+
+### Managing access
+
+Access is managed in Microsoft Entra, not in the pipeline, and needs no redeploy.
+The pipeline deliberately has no permission to assign roles.
+
+1. In the Entra admin center, open **Enterprise applications** and select the
+   Web application (`<entraAppNamePrefix>-web`).
+2. Under **Users and groups**, choose **Add user/group**, select the user and
+   the **PenniesCount user** role, then **Assign**. Remove an assignment there
+   to revoke access.
+3. Users outside the tenant must first be invited as guests. Assigning groups
+   requires Microsoft Entra ID P1/P2; on the free tier assign users individually.
+
+New assignments apply at the user's next sign-in. Revocation blocks new sign-ins
+and API tokens immediately, but an existing Web session cookie and cached API
+token can remain valid until they expire (an access token lasts up to about an
+hour); restart the Web app to end sessions at once. Each environment has its own
+Web application, so dev and prod access are assigned separately.
 
 The shared RG contains the App Service plan, SQL logical server **and database**.
 Azure SQL databases are child resources of the logical server and cannot be

@@ -15,12 +15,12 @@ if (!useEntra && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("AzureAd configuration is required outside Development.");
 if (useEntra)
 {
-    var allowedUsers = builder.Configuration.GetSection("AllowedUserObjectIds").Get<string[]>()
-        ?? throw new InvalidOperationException("AllowedUserObjectIds is required.");
-    if (allowedUsers.Length == 0)
-        throw new InvalidOperationException("AllowedUserObjectIds must not be empty.");
+    var authorizedClientId = builder.Configuration["AuthorizedClientId"];
+    if (string.IsNullOrWhiteSpace(authorizedClientId))
+        throw new InvalidOperationException("AuthorizedClientId is required.");
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+    // Only the Web client may call the API; Entra issues it tokens solely for users assigned its app role.
     builder.Services.AddAuthorization(options =>
     {
         options.FallbackPolicy = new AuthorizationPolicyBuilder()
@@ -29,7 +29,8 @@ if (useEntra)
                 context.User.FindAll("http://schemas.microsoft.com/identity/claims/scope")
                     .Concat(context.User.FindAll("scp"))
                     .Any(claim => claim.Value.Split(' ').Contains("access_as_user", StringComparer.Ordinal))
-                && allowedUsers.Contains(context.User.GetObjectId(), StringComparer.OrdinalIgnoreCase))
+                && string.Equals(context.User.FindFirst("azp")?.Value, authorizedClientId,
+                    StringComparison.OrdinalIgnoreCase))
             .Build();
     });
 }

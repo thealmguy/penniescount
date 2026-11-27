@@ -18,8 +18,6 @@ param apiAppName string
 param webAppName string
 @secure()
 param entraAppNamePrefix string
-@secure()
-param allowedUserObjectIds string
 param sqlSkuName string = 'GP_S_Gen5_2'
 param sqlUseFreeLimit bool = true
 param sqlAutoPauseDelay int = 60
@@ -80,6 +78,5 @@ module settings 'modules/settings.bicep' = {
     entraDetails: entra.outputs.details
     sqlHostname: database.outputs.hostname
     sqlDatabaseName: sqlDatabaseName
-    allowedUserObjectIds: allowedUserObjectIds
   }
 }

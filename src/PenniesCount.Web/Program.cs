@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Identity.Web;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,10 +13,6 @@ if (!useEntra && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("AzureAd configuration is required outside Development.");
 if (useEntra)
 {
-    var allowedUsers = builder.Configuration.GetSection("AllowedUserObjectIds").Get<string[]>()
-        ?? throw new InvalidOperationException("AllowedUserObjectIds is required.");
-    if (allowedUsers.Length == 0)
-        throw new InvalidOperationException("AllowedUserObjectIds must not be empty.");
     var scope = builder.Configuration["ApiScope"]
         ?? throw new InvalidOperationException("ApiScope is required.");
     builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
@@ -26,10 +23,12 @@ if (useEntra)
         options => options.AccessDeniedPath = "/access-denied");
     builder.Services.AddAuthorization(options =>
     {
+        // Entra enforces role assignment at sign-in; this re-checks it in case that setting is relaxed.
         options.FallbackPolicy = new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
-            .RequireAssertion(context =>
-                allowedUsers.Contains(context.User.GetObjectId(), StringComparer.OrdinalIgnoreCase))
+            .RequireAssertion(context => context.User.HasClaim(claim =>
+                (claim.Type == "roles" || claim.Type == ClaimTypes.Role)
+                && claim.Value == "PenniesCount.User"))
             .Build();
     });
     builder.Services.AddCascadingAuthenticationState();
@@ -70,3 +69,5 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+public partial class Program;

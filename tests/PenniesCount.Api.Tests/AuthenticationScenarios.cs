@@ -14,14 +14,15 @@ namespace PenniesCount.Api.Tests;
 public sealed class AuthenticationScenarios
 {
     [Theory]
-    [InlineData("allowed-user", "access_as_user", HttpStatusCode.BadRequest)]
-    [InlineData("allowed-user", "other access_as_user", HttpStatusCode.BadRequest)]
-    [InlineData("other-user", "access_as_user", HttpStatusCode.Forbidden)]
-    [InlineData("allowed-user", "other", HttpStatusCode.Forbidden)]
-    [InlineData("allowed-user", "access_as_user_extra", HttpStatusCode.Forbidden)]
-    [InlineData("allowed-user", "", HttpStatusCode.Forbidden)]
-    public async Task Given_a_valid_identity_When_calling_data_Then_both_user_and_delegated_scope_are_required(
-        string objectId, string scope, HttpStatusCode expected)
+    [InlineData("web-client", "access_as_user", HttpStatusCode.BadRequest)]
+    [InlineData("WEB-CLIENT", "other access_as_user", HttpStatusCode.BadRequest)]
+    [InlineData("other-client", "access_as_user", HttpStatusCode.Forbidden)]
+    [InlineData(null, "access_as_user", HttpStatusCode.Forbidden)]
+    [InlineData("web-client", "other", HttpStatusCode.Forbidden)]
+    [InlineData("web-client", "access_as_user_extra", HttpStatusCode.Forbidden)]
+    [InlineData("web-client", "", HttpStatusCode.Forbidden)]
+    public async Task Given_a_valid_identity_When_calling_data_Then_the_web_client_and_delegated_scope_are_required(
+        string? clientId, string scope, HttpStatusCode expected)
     {
         using var factory = CreateCloudFactory().WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
@@ -32,7 +33,7 @@ public sealed class AuthenticationScenarios
                     options.DefaultChallengeScheme = "Test";
                     options.DefaultForbidScheme = "Test";
                 }).AddScheme<AuthenticationSchemeOptions, TestIdentity>("Test", _ => { });
-                services.AddSingleton(new IdentityClaims(objectId, scope));
+                services.AddSingleton(new IdentityClaims(clientId, scope));
             }));
         using var client = factory.CreateClient();
 
@@ -66,16 +67,29 @@ public sealed class AuthenticationScenarios
         Assert.Contains("AzureAd configuration is required", error.Message);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public void Given_cloud_auth_without_an_authorized_client_When_starting_Then_startup_fails_closed(string? clientId)
+    {
+        using var factory = CreateCloudFactory().WithWebHostBuilder(builder =>
+            builder.UseSetting("AuthorizedClientId", clientId));
+
+        var error = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("AuthorizedClientId is required", error.Message);
+    }
+
     private static WebApplicationFactory<Program> CreateCloudFactory() =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("AzureAd:Instance", "https://login.microsoftonline.com/");
             builder.UseSetting("AzureAd:TenantId", Guid.Empty.ToString());
             builder.UseSetting("AzureAd:ClientId", Guid.Empty.ToString());
-            builder.UseSetting("AllowedUserObjectIds:0", "allowed-user");
+            builder.UseSetting("AuthorizedClientId", "web-client");
         });
 
-    private sealed record IdentityClaims(string ObjectId, string Scope);
+    private sealed record IdentityClaims(string? ClientId, string Scope);
 
     private sealed class TestIdentity(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -83,9 +97,13 @@ public sealed class AuthenticationScenarios
         UrlEncoder encoder,
         IdentityClaims claims) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync() => Task.FromResult(
-            AuthenticateResult.Success(new AuthenticationTicket(
-                new ClaimsPrincipal(new ClaimsIdentity(
-                    [new("oid", claims.ObjectId), new("scp", claims.Scope)], Scheme.Name)), Scheme.Name)));
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            List<Claim> identity = [new("oid", "user"), new("scp", claims.Scope)];
+            if (claims.ClientId is not null)
+                identity.Add(new("azp", claims.ClientId));
+            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(
+                new ClaimsPrincipal(new ClaimsIdentity(identity, Scheme.Name)), Scheme.Name)));
+        }
     }
 }

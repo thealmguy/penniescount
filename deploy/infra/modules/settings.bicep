@@ -10,13 +10,6 @@ param entraDetails object
 param sqlHostname string
 @secure()
 param sqlDatabaseName string
-@secure()
-param allowedUserObjectIds string
-
-var userIds = json(allowedUserObjectIds)
-var allowedUsers = toObject(range(0, length(userIds)),
-  index => 'AllowedUserObjectIds__${index}',
-  index => userIds[index])
 var common = {
   ASPNETCORE_ENVIRONMENT: 'Production'
   ASPNETCORE_FORWARDEDHEADERS_ENABLED: 'true'
@@ -32,9 +25,10 @@ resource web 'Microsoft.Web/sites@2024-11-01' existing = { name: webAppName }
 resource apiSettings 'Microsoft.Web/sites/config@2024-11-01' = {
   parent: api
   name: 'appsettings'
-  properties: union(common, allowedUsers, {
+  properties: union(common, {
     AllowedHosts: siteDetails.apiHostname
     AzureAd__ClientId: entraDetails.apiClientId
+    AuthorizedClientId: entraDetails.webClientId
     ConnectionStrings__Savings: 'Server=tcp:${sqlHostname};Database=${sqlDatabaseName};Authentication=Active Directory Managed Identity;User Id=${siteDetails.databaseClientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=120;ConnectRetryCount=3;ConnectRetryInterval=10'
   })
 }
@@ -42,7 +36,7 @@ resource apiSettings 'Microsoft.Web/sites/config@2024-11-01' = {
 resource webSettings 'Microsoft.Web/sites/config@2024-11-01' = {
   parent: web
   name: 'appsettings'
-  properties: union(common, allowedUsers, {
+  properties: union(common, {
     AllowedHosts: siteDetails.webHostname
     AzureAd__ClientId: entraDetails.webClientId
     AzureAd__CallbackPath: '/signin-oidc'
