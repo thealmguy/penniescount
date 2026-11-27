@@ -11,8 +11,8 @@ public sealed class SavingsLedgerScenarios(DatabaseFactory factory) : IClassFixt
 {
     private static readonly DateOnly Today = new(2027, 1, 15);
     private static readonly DateTimeOffset Now = new(2027, 1, 15, 12, 0, 0, TimeSpan.Zero);
-    public Task InitializeAsync() => factory.ResetAsync();
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async ValueTask InitializeAsync() => await factory.ResetAsync();
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     [Fact]
     public async Task Given_a_part_funded_item_When_recording_payments_Then_each_is_a_ledger_entry_that_raises_funding()

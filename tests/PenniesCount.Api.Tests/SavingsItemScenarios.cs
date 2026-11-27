@@ -382,7 +382,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
             }
             finally
             {
-                await ((IAsyncLifetime)isolated).DisposeAsync();
+                await isolated.DisposeAsync();
             }
         }
 

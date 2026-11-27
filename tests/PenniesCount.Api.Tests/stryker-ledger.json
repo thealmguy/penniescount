@@ -12,7 +12,8 @@
     ],
     "test-case-filter": "FullyQualifiedName~SavingsDrawdownScenarios|FullyQualifiedName~SavingsLedgerScenarios|(FullyQualifiedName~SavingsItemScenarios&FullyQualifiedName!~SavingsCategoryScenarios)|FullyQualifiedName~DashboardScenarios|FullyQualifiedName~FutureLookScenarios|FullyQualifiedName~Given_a_payment_on_the_first_working_day",
     "mutation-level": "Complete",
-    "concurrency": 4,
+    "test-runner": "mtp",
+    "concurrency": 5,
     "ignore-methods": [ "*LogWarning", "*CreateLogger" ],
     "reporters": [ "dots", "cleartext", "html", "json" ],
     "thresholds": { "high": 100, "low": 100, "break": 100 }

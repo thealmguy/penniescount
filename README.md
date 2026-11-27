@@ -62,11 +62,23 @@ Run the full mutation gate, all four configurations below in parallel:
 .\scripts\mutation.ps1
 ```
 
-Each gate runs in its own temporary copy of the working tree, so builds never
-share `bin` output. Reports are written to `StrykerOutput\parallel-<timestamp>`.
+Each gate runs in its own copy of the working tree, so builds never share `bin`
+output. The copies persist under `%TEMP%\PenniesCount.Mutation`. Each run mirrors
+the working tree into them but keeps each gate's `bin` and `obj`, so later runs
+skip a NuGet restore retry and build incrementally. If another run holds the
+copies, the script uses slower fresh temporary copies instead. `-Clean` discards
+the persistent copies first. Reports are written to
+`StrykerOutput\parallel-<timestamp>`.
 The script prints per-gate and total timings. It fails if any gate fails or any
 mutant is Survived, NoCoverage, Timeout or RuntimeError. Optional parameters
-tune each gate's test sessions (for example `-LedgerConcurrency 4`).
+tune each gate's test sessions (for example `-LedgerConcurrency 5`).
+
+The test projects use xUnit v3, and every configuration uses Stryker's Microsoft
+Testing Platform runner (`"test-runner": "mtp"`, a Stryker preview feature). It
+keeps each test process running between mutants instead of starting a new test
+host per run. Stryker's VSTest runner cannot activate mutants in xUnit v3's
+out-of-process tests, so it would report every mutant as Survived; keep the MTP
+runner. `dotnet test` still runs the suite through VSTest.
 
 Each configuration can also be run on its own. The database-free API gate covers
 the savings term policy, ledger write rules and violations, dashboard summaries,

@@ -11,8 +11,8 @@ namespace PenniesCount.Api.Tests;
 
 public sealed class FutureLookScenarios(DatabaseFactory factory) : IClassFixture<DatabaseFactory>, IAsyncLifetime
 {
-    public Task InitializeAsync() => factory.ResetAsync();
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async ValueTask InitializeAsync() => await factory.ResetAsync();
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     [Fact]
     public async Task Given_all_purpose_categories_and_legacy_items_When_forecasting_Then_both_groupings_reconcile_and_edits_move_funding()

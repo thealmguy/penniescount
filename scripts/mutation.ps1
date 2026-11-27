@@ -3,26 +3,45 @@
 Runs the full Stryker mutation gate: all four configurations in parallel.
 
 .DESCRIPTION
-Each gate runs in its own temporary copy of the working tree. Stryker builds the
-test project and swaps mutated assemblies into bin, so gates that share projects
-must not share build outputs. The script fails unless every gate exits cleanly and
-every report has only Killed, Ignored or CompileError mutants.
+Each gate runs in its own copy of the working tree. Stryker builds the test project
+and swaps mutated assemblies into bin, so gates that share projects must not share
+build outputs. The copies persist between runs: each run mirrors the working tree
+into them but keeps each gate's bin and obj, so Stryker skips its NuGet restore retry
+and builds incrementally. A concurrent run that cannot lock the persistent copies
+uses fresh temporary ones instead; -Clean discards the persistent copies first.
+The script fails unless every gate exits cleanly and every report has only Killed,
+Ignored or CompileError mutants.
 Reports are written to StrykerOutput\parallel-<timestamp>\<gate>.
 #>
 [CmdletBinding()]
 param(
-    [int]$LedgerConcurrency = 4,
+    [int]$LedgerConcurrency = 5,
     [int]$ApiConcurrency = 2,
     [int]$CoreConcurrency = 1,
     [int]$ContractsConcurrency = 1,
-    [switch]$KeepWorkspace
+    [switch]$Clean
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $reports = Join-Path $repo "StrykerOutput\parallel-$stamp"
-$workspace = Join-Path ([IO.Path]::GetTempPath()) "PenniesCount.Mutation\$stamp-$PID"
+$repoKey = -join [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+    [Text.Encoding]::UTF8.GetBytes($repo.ToLowerInvariant())))[0..11]
+$root = Join-Path ([IO.Path]::GetTempPath()) 'PenniesCount.Mutation'
+New-Item -ItemType Directory -Force -Path $root | Out-Null
+$workspace = Join-Path $root $repoKey
+$temporary = $false
+$lease = $null
+try {
+    $lease = [IO.File]::Open("$workspace.lock", 'OpenOrCreate', 'ReadWrite', 'None')
+}
+catch [IO.IOException] {
+    Write-Host 'Another mutation run holds the persistent workspace; using a temporary copy.'
+    $workspace = Join-Path $root "$repoKey-$stamp-$PID"
+    $temporary = $true
+}
+if ($Clean -and -not $temporary -and (Test-Path $workspace)) { Remove-Item -Recurse -Force $workspace }
 
 $gates = @(
     @{ Name = 'ledger'; Project = 'tests\PenniesCount.Api.Tests'; Config = 'stryker-ledger.json'; Concurrency = $LedgerConcurrency }
@@ -36,7 +55,7 @@ $clock = [Diagnostics.Stopwatch]::StartNew()
 try {
     foreach ($gate in $gates) {
         $copy = Join-Path $workspace $gate.Name
-        robocopy $repo $copy /E /NFL /NDL /NJH /NJS /NP /R:1 /W:1 `
+        robocopy $repo $copy /MIR /NFL /NDL /NJH /NJS /NP /R:1 /W:1 `
             /XD .git .vs .idea bin obj StrykerOutput TestResults /XF *.xlsx | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "Copying the working tree for the $($gate.Name) gate failed." }
         $gate.Output = Join-Path $reports $gate.Name
@@ -81,7 +100,8 @@ finally {
     foreach ($gate in $gates) {
         if ($gate.Process -and -not $gate.Process.HasExited) { Stop-Process -Id $gate.Process.Id }
     }
-    if (-not $KeepWorkspace -and (Test-Path $workspace)) {
+    if ($temporary -and (Test-Path $workspace)) {
         Remove-Item -Recurse -Force $workspace -ErrorAction SilentlyContinue
     }
+    if ($lease) { $lease.Dispose() }
 }

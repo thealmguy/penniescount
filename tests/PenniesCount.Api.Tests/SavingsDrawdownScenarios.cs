@@ -12,8 +12,8 @@ namespace PenniesCount.Api.Tests;
 
 public sealed class SavingsDrawdownScenarios(DatabaseFactory factory) : IClassFixture<DatabaseFactory>, IAsyncLifetime
 {
-    public Task InitializeAsync() => factory.ResetAsync();
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async ValueTask InitializeAsync() => await factory.ResetAsync();
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     [Fact]
     public async Task Given_a_funded_holiday_When_spending_in_parts_Then_funding_is_preserved_and_accounts_are_untouched()
@@ -384,9 +384,14 @@ public sealed class SavingsDrawdownScenarios(DatabaseFactory factory) : IClassFi
         var competing = remove
             ? client.PutAsJsonAsync($"/api/savings-items/{Id(item)}/removal", new { version = Version(item) })
             : Spend(client, item, 10000m);
+        // Neither writer can finish while both are held at the gate, so a finished request means the other
+        // writer will never arrive; open the gate instead of waiting out its timeout, then fail on Arrivals.
+        await Task.WhenAny(spending, competing);
+        gate.Open();
         var responses = await Task.WhenAll(spending, competing);
         try
         {
+            Assert.Equal(2, gate.Arrivals);
             Assert.Single(responses, x => x.IsSuccessStatusCode);
             Assert.Single(responses, x => x.StatusCode == HttpStatusCode.Conflict);
             var history = (await client.GetFromJsonAsync<SavingsDrawdownHistoryResponse>(
@@ -420,12 +425,14 @@ public sealed class SavingsDrawdownScenarios(DatabaseFactory factory) : IClassFi
         private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _waiting;
         public bool Armed { get; set; }
+        public int Arrivals => Volatile.Read(ref _waiting);
+        public void Open() => _ready.TrySetResult();
         public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
             if (Armed)
             {
-                if (Interlocked.Increment(ref _waiting) == 2) _ready.SetResult();
+                if (Interlocked.Increment(ref _waiting) == 2) Open();
                 await _ready.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
             }
             return result;

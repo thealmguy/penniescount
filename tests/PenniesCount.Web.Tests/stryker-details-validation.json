@@ -4,6 +4,7 @@
     "mutate": [ "**/SavingsItems.cs{2218..2448}" ],
     "test-case-filter": "FullyQualifiedName~SavingsItemPageScenarios",
     "mutation-level": "Complete",
+    "test-runner": "mtp",
     "concurrency": 1,
     "reporters": [ "dots", "cleartext", "html", "json" ],
     "thresholds": { "high": 100, "low": 100, "break": 100 }

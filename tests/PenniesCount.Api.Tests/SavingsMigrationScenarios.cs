@@ -10,8 +10,8 @@ namespace PenniesCount.Api.Tests;
 public sealed class SavingsMigrationScenarios : IAsyncLifetime
 {
     private readonly DatabaseFactory factory = DatabaseFactory.Dedicated();
-    public Task InitializeAsync() => factory.InitializeAsync();
-    public Task DisposeAsync() => ((IAsyncLifetime)factory).DisposeAsync();
+    public ValueTask InitializeAsync() => factory.InitializeAsync();
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
 
     [Fact]
     public async Task Given_pre_drawdown_data_When_migrating_Then_existing_items_are_active_with_their_funds_preserved()

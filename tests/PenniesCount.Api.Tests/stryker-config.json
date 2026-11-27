@@ -14,6 +14,7 @@
     ],
     "test-case-filter": "FullyQualifiedName~SavingsTermClassifierScenarios|FullyQualifiedName~SavingsLedgerEntityScenarios|FullyQualifiedName~SavingsItemRuleScenarios|FullyQualifiedName~DashboardSummaryScenarios|FullyQualifiedName~FutureLookProjectionScenarios|FullyQualifiedName~GovUkBankHolidayProviderScenarios",
     "mutation-level": "Complete",
+    "test-runner": "mtp",
     "concurrency": 4,
     "ignore-methods": [ "*LogWarning" ],
     "reporters": [ "progress", "cleartext", "html", "json" ],

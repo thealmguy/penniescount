@@ -8,6 +8,7 @@
     ],
     "test-case-filter": "FullyQualifiedName~WorkingDayScheduleScenarios|FullyQualifiedName~BudgetScenarios|FullyQualifiedName~ForecastScenarios",
     "mutation-level": "Complete",
+    "test-runner": "mtp",
     "concurrency": 4,
     "reporters": [ "progress", "cleartext", "html", "json" ],
     "thresholds": { "high": 100, "low": 100, "break": 100 }

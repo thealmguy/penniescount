@@ -18,6 +18,7 @@ public sealed class DatabaseFactory : WebApplicationFactory<Program>, IAsyncLife
     private const int PoolSize = 64;
     private static readonly Lazy<string> SchemaKey = new(ComputeSchemaKey);
     private readonly bool _dedicated;
+    private bool _disposed;
     private string? _database;
     private FileStream? _lease;
 
@@ -47,7 +48,7 @@ public sealed class DatabaseFactory : WebApplicationFactory<Program>, IAsyncLife
         });
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         if (!_dedicated) _database = LeasePooledDatabase();
         using (var scope = Services.CreateScope())
@@ -71,8 +72,10 @@ public sealed class DatabaseFactory : WebApplicationFactory<Program>, IAsyncLife
         await transaction.CommitAsync();
     }
 
-    async Task IAsyncLifetime.DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        _disposed = true;
         try
         {
             if (_dedicated)
@@ -82,7 +85,7 @@ public sealed class DatabaseFactory : WebApplicationFactory<Program>, IAsyncLife
                 VerifyDatabase(db);
                 await db.Database.EnsureDeletedAsync();
             }
-            await DisposeAsync();
+            await base.DisposeAsync();
         }
         finally
         {
