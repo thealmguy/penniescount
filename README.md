@@ -279,6 +279,11 @@ can be interrupted, and waking a serverless database can be slow. The connection
 timeout/reconnect settings allow for this, while the Web still reports slow API
 calls explicitly. Free-tier eligibility and quotas must be checked in the target
 subscription; deployment does not silently substitute a paid SKU.
+Check actual App Service provisioning preflight, not only the generic quota
+listing: a subscription can report an F1 allowance there while provisioning
+fails with `SubscriptionIsOverQuotaForSku` and a zero limit. This deployment
+requires one plan instance. Request quota through Azure Quotas/support or
+explicitly approve another region before retrying; no paid fallback is applied.
 
 For production, invoke the same deploy stage template with a separate stage
 name, `environment: pcs-prd`, `variableGroup: pcs-prd`, and its own federated
