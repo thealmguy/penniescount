@@ -3,14 +3,16 @@
     "project": "PenniesCount.Api.csproj",
     "mutate": [
       "**/SavingsTermClassifier.cs",
-      "**/Data/SavingsItem.cs{708..2516}",
+      "**/Data/SavingsItem.cs{708..9062}",
+      "**/Data/LedgerRuleViolation.cs",
+      "**/DashboardEndpoints.cs{3055..4429}",
       "**/Data/SavingsLedgerEntry.cs{591..1293}",
       "**/FutureLookProjection.cs",
       "**/Holidays/BankHolidayCalendar.cs",
       "**/Holidays/GovUkBankHolidayParser.cs",
       "**/Holidays/GovUkBankHolidayProvider.cs"
     ],
-    "test-case-filter": "FullyQualifiedName~SavingsTermClassifierScenarios|FullyQualifiedName~SavingsLedgerEntityScenarios|FullyQualifiedName~FutureLookProjectionScenarios|FullyQualifiedName~GovUkBankHolidayProviderScenarios",
+    "test-case-filter": "FullyQualifiedName~SavingsTermClassifierScenarios|FullyQualifiedName~SavingsLedgerEntityScenarios|FullyQualifiedName~SavingsItemRuleScenarios|FullyQualifiedName~DashboardSummaryScenarios|FullyQualifiedName~FutureLookProjectionScenarios|FullyQualifiedName~GovUkBankHolidayProviderScenarios",
     "mutation-level": "Complete",
     "concurrency": 4,
     "ignore-methods": [ "*LogWarning" ],

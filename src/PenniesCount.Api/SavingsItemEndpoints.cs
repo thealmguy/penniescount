@@ -29,14 +29,7 @@ internal static class SavingsItemEndpoints
             var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
             var error = ApiValidation.Check(request, logs.CreateLogger("SavingsItems"));
             if (error is not null) return error;
-            var item = new SavingsItem
-            {
-                Name = request.Name.Trim(), Category = request.Category, TargetAmount = request.TargetAmount,
-                StartDate = request.StartDate, TargetDate = request.TargetDate
-            };
-            if (request.AllocatedAmount > 0)
-                item.Record(LedgerEntryType.OpeningFunding, request.AllocatedAmount, asOf,
-                    "Initial allocation", clock.GetUtcNow());
+            var item = SavingsItem.Open(request, asOf, clock.GetUtcNow());
             db.SavingsItems.Add(item);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/savings-items/{item.Id}", item.ToResponse(asOf));
@@ -50,20 +43,8 @@ internal static class SavingsItemEndpoints
             if (error is not null) return error;
             var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (item is null) return Results.NotFound();
-            if (Convert.ToBase64String(item.Version) != request.Version)
-                return ApiValidation.Conflict(logger);
-            if (item.IsRemoved) return SavingsDrawdownEndpoints.Removed(logger);
-            if (request.AllocatedAmount > item.TargetAmount || request.AllocatedAmount < item.DrawnDownAmount)
-            {
-                logger.LogWarning("Item allocation validation failed.");
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.AllocatedAmount)] = ["Total funding must cover recorded drawdowns and cannot exceed the target."]
-                });
-            }
-            var adjustment = request.AllocatedAmount - item.FundedAmount;
-            if (adjustment != 0)
-                item.Record(LedgerEntryType.FundingAdjustment, adjustment, asOf, "Total funding updated", clock.GetUtcNow());
+            var violation = item.SetTotalFunding(request.Version, request.AllocatedAmount, asOf, clock.GetUtcNow());
+            if (violation is not null) return violation.ToResult(logger);
             return await SavingsDrawdownEndpoints.SaveItemAsync(db, item, logger, ct) ?? Results.Ok(item.ToResponse(asOf));
         });
         routes.MapPut("/{id:guid}/details", async Task<IResult> (Guid id, UpdateSavingsItemDetailsRequest request,
@@ -75,19 +56,8 @@ internal static class SavingsItemEndpoints
             if (error is not null) return error;
             var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (item is null) return Results.NotFound();
-            error = SavingsDrawdownEndpoints.CheckWritable(item, request.Version, logger);
-            if (error is not null) return error;
-            if (request.TargetDate < item.StartDate)
-            {
-                logger.LogWarning("Item target date validation failed.");
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.TargetDate)] = ["Target date must be on or after the start date."]
-                });
-            }
-            item.Name = request.Name.Trim();
-            item.TargetDate = request.TargetDate;
-            item.Category = request.Category;
+            var violation = item.UpdateDetails(request.Version, request.Name, request.TargetDate, request.Category);
+            if (violation is not null) return violation.ToResult(logger);
             return await SavingsDrawdownEndpoints.SaveItemAsync(db, item, logger, ct) ?? Results.Ok(item.ToResponse(asOf));
         }).WithName("UpdateSavingsItemDetails").WithSummary("Edit savings item details")
             .WithDescription("Update name, save-by date and required purpose category without changing funding or ledger history.")

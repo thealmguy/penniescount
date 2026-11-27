@@ -33,18 +33,15 @@ internal static class SavingsLedgerEndpoints
             var logger = logs.CreateLogger("SavingsItems");
             var error = ApiValidation.Check(request, logger);
             if (error is not null) return error;
-            if (request.PaidOn == DateOnly.MinValue || request.PaidOn > asOf)
-                return Invalid(logger, nameof(request.PaidOn), "Payment date is required and cannot be in the future.");
+            var violation = SavingsItem.CheckPaymentDate(request.PaidOn, asOf);
+            if (violation is not null) return violation.ToResult(logger);
             var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (item is null) return Results.NotFound();
-            error = SavingsDrawdownEndpoints.CheckWritable(item, request.Version, logger);
-            if (error is not null) return error;
-            if (item.FundedAmount + request.Amount > item.TargetAmount)
-                return Invalid(logger, nameof(request.Amount), "Payments cannot take total funding above the target.");
-            var payment = item.Record(LedgerEntryType.AllocationPayment, request.Amount, request.PaidOn,
-                null, clock.GetUtcNow());
+            violation = item.RecordPayment(request.Version, request.Amount, request.PaidOn, clock.GetUtcNow(),
+                out var payment);
+            if (violation is not null) return violation.ToResult(logger);
             return await SavingsDrawdownEndpoints.SaveItemAsync(db, item, logger, ct)
-                ?? Results.Created($"/api/savings-items/{id}/ledger/{payment.Id}", payment.ToResponse(false));
+                ?? Results.Created($"/api/savings-items/{id}/ledger/{payment!.Id}", payment.ToResponse(false));
         });
         routes.MapPost("/ledger/{entryId:guid}/reversal", async Task<IResult> (Guid id, Guid entryId,
             ItemVersionRequest request, SavingsDbContext db, TimeProvider clock, ILoggerFactory logs,
@@ -55,27 +52,10 @@ internal static class SavingsLedgerEndpoints
             if (error is not null) return error;
             var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (item is null) return Results.NotFound();
-            error = SavingsDrawdownEndpoints.CheckWritable(item, request.Version, logger);
-            if (error is not null) return error;
-            var original = item.Entries.SingleOrDefault(x => x.Id == entryId);
-            if (original is null) return Results.NotFound();
-            if (original.Type == LedgerEntryType.Reversal)
-                return Invalid(logger, "EntryId", "Reversal entries cannot be reversed.");
-            if (item.IsReversed(original)) return SavingsDrawdownEndpoints.AlreadyReversed(logger);
-            var funded = item.FundedAmount - original.FundingEffect;
-            if (funded < item.DrawnDownAmount - original.DrawdownEffect || funded > item.TargetAmount)
-                return Invalid(logger, "EntryId",
-                    "Reversing this entry would take total funding below recorded drawdowns or above the target.");
-            var reversal = item.Record(LedgerEntryType.Reversal, original.Amount, original.EffectiveDate, null,
-                clock.GetUtcNow(), reverses: original.Id);
+            var violation = item.ReverseEntry(request.Version, entryId, clock.GetUtcNow(), out var reversal);
+            if (violation is not null) return violation.ToResult(logger);
             return await SavingsDrawdownEndpoints.SaveItemAsync(db, item, logger, ct)
-                ?? Results.Created($"/api/savings-items/{id}/ledger/{reversal.Id}", reversal.ToResponse(false));
+                ?? Results.Created($"/api/savings-items/{id}/ledger/{reversal!.Id}", reversal.ToResponse(false));
         });
-    }
-
-    private static IResult Invalid(ILogger logger, string field, string message)
-    {
-        logger.LogWarning("Ledger validation failed.");
-        return Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });
     }
 }

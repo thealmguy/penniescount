@@ -25,7 +25,7 @@ internal static class SavingsDrawdownEndpoints
         {
             var item = await db.SavingsItems.AsNoTracking().Include(x => x.Entries)
                 .SingleOrDefaultAsync(x => x.Id == id, ct);
-            var drawdown = item?.Entries.SingleOrDefault(x => x.Id == drawdownId && x.Type == LedgerEntryType.Drawdown);
+            var drawdown = item?.FindDrawdown(drawdownId);
             return drawdown is null ? Results.NotFound() : Results.Ok(drawdown.ToDrawdownResponse(item!.IsReversed(drawdown)));
         });
         routes.MapPost("/drawdowns", (Guid id, SaveDrawdownRequest request, SavingsDbContext db,
@@ -43,13 +43,8 @@ internal static class SavingsDrawdownEndpoints
             if (error is not null) return error;
             var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (item is null) return Results.NotFound();
-            error = CheckWritable(item, request.Version, logger);
-            if (error is not null) return error;
-            var drawdown = item.Entries.SingleOrDefault(x => x.Id == drawdownId && x.Type == LedgerEntryType.Drawdown);
-            if (drawdown is null) return Results.NotFound();
-            if (item.IsReversed(drawdown)) return AlreadyReversed(logger);
-            item.Record(LedgerEntryType.Reversal, drawdown.Amount, drawdown.EffectiveDate, null,
-                clock.GetUtcNow(), reverses: drawdown.Id);
+            var violation = item.ReverseDrawdown(request.Version, drawdownId, clock.GetUtcNow());
+            if (violation is not null) return violation.ToResult(logger);
             return await SaveItemAsync(db, item, logger, ct) ?? Results.NoContent();
         });
         routes.MapPut("/removal", async Task<IResult> (Guid id, ItemVersionRequest request, SavingsDbContext db,
@@ -61,9 +56,8 @@ internal static class SavingsDrawdownEndpoints
             if (error is not null) return error;
             var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
             if (item is null) return Results.NotFound();
-            error = CheckWritable(item, request.Version, logger);
-            if (error is not null) return error;
-            item.IsRemoved = true;
+            var violation = item.Remove(request.Version);
+            if (violation is not null) return violation.ToResult(logger);
             return await SaveItemAsync(db, item, logger, ct) ?? Results.Ok(item.ToResponse(asOf));
         });
     }
@@ -74,60 +68,19 @@ internal static class SavingsDrawdownEndpoints
         var asOf = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
         var error = ApiValidation.Check(request, logger);
         if (error is not null) return error;
-        if (request.SpentOn == DateOnly.MinValue || request.SpentOn > asOf)
-        {
-            logger.LogWarning("Drawdown date validation failed.");
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(request.SpentOn)] = ["Spending date is required and cannot be in the future."]
-            });
-        }
+        var violation = SavingsItem.CheckSpendingDate(request.SpentOn, asOf);
+        if (violation is not null) return violation.ToResult(logger);
         var item = await db.SavingsItems.Include(x => x.Entries).SingleOrDefaultAsync(x => x.Id == id, ct);
         if (item is null) return Results.NotFound();
-        error = CheckWritable(item, request.Version, logger);
-        if (error is not null) return error;
-        var existing = item.Entries.SingleOrDefault(x => x.Id == drawdownId && x.Type == LedgerEntryType.Drawdown);
-        if (drawdownId.HasValue && existing is null) return Results.NotFound();
-        if (existing is not null && item.IsReversed(existing)) return AlreadyReversed(logger);
-        if (item.DrawnDownAmount - (existing?.Amount ?? 0m) + request.Amount > item.FundedAmount)
-        {
-            logger.LogWarning("Drawdown amount validation failed.");
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(request.Amount)] = ["Drawdowns cannot exceed total funded allocation."]
-            });
-        }
-        var now = clock.GetUtcNow();
-        if (existing is not null)
-            item.Record(LedgerEntryType.Reversal, existing.Amount, existing.EffectiveDate, null, now, reverses: existing.Id);
-        var drawdown = item.Record(LedgerEntryType.Drawdown, request.Amount, request.SpentOn,
-            request.Description?.Trim(), now, replaces: existing?.Id);
+        violation = item.RecordDrawdown(request.Version, drawdownId, request.Amount, request.SpentOn,
+            request.Description, clock.GetUtcNow(), out var drawdown);
+        if (violation is not null) return violation.ToResult(logger);
         error = await SaveItemAsync(db, item, logger, ct);
         if (error is not null) return error;
-        var response = drawdown.ToDrawdownResponse(false);
-        return existing is null
+        var response = drawdown!.ToDrawdownResponse(false);
+        return drawdownId is null
             ? Results.Created($"/api/savings-items/{id}/drawdowns/{drawdown.Id}", response)
             : Results.Ok(response);
-    }
-
-    internal static IResult? CheckWritable(SavingsItem item, string version, ILogger logger)
-    {
-        if (Convert.ToBase64String(item.Version) != version) return ApiValidation.Conflict(logger);
-        return item.IsRemoved ? Removed(logger) : null;
-    }
-
-    internal static IResult Removed(ILogger logger)
-    {
-        logger.LogWarning("A write to a removed savings item was rejected.");
-        return Results.Problem(statusCode: StatusCodes.Status409Conflict,
-            title: "Removed items are read-only.");
-    }
-
-    internal static IResult AlreadyReversed(ILogger logger)
-    {
-        logger.LogWarning("A write to an already reversed ledger entry was rejected.");
-        return Results.Problem(statusCode: StatusCodes.Status409Conflict,
-            title: "This entry has already been reversed. Reload the history and retry.");
     }
 
     internal static async Task<IResult?> SaveItemAsync(SavingsDbContext db, SavingsItem item,

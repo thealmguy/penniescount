@@ -56,8 +56,20 @@ dotnet build .\PenniesCount.sln
 dotnet test .\PenniesCount.sln
 ```
 
-The full mutation gate comprises the following four runs. Start with the
-database-free API gate for the savings term policy, ledger entity rules,
+Run the full mutation gate, all four configurations below in parallel:
+
+```powershell
+.\scripts\mutation.ps1
+```
+
+Each gate runs in its own temporary copy of the working tree, so builds never
+share `bin` output. Reports are written to `StrykerOutput\parallel-<timestamp>`.
+The script prints per-gate and total timings. It fails if any gate fails or any
+mutant is Survived, NoCoverage, Timeout or RuntimeError. Optional parameters
+tune each gate's test sessions (for example `-LedgerConcurrency 4`).
+
+Each configuration can also be run on its own. The database-free API gate covers
+the savings term policy, ledger write rules and violations, dashboard summaries,
 future-look calculations, and holiday parsing and caching:
 
 ```powershell
@@ -86,14 +98,25 @@ Push-Location .\tests\PenniesCount.Web.Tests
 try { dotnet stryker --config-file stryker-details-validation.json } finally { Pop-Location }
 ```
 
-The ledger configuration targets the ledger, payment, reversal and drawdown
-endpoints, category creation and details editing, and
-the item and dashboard code (including purpose-category summaries) that reads
-or writes ledger entries. It requires 100% and excludes logging
-calls/logger category names and database-generated/default entity initializers
-from mutation, not financial logic. It runs four test sessions in parallel,
-each against its own LocalDB databases, and takes several minutes. Its character spans isolate changed logic
-in existing files; update those spans when that code moves. The forecast and
+Ledger write rules live on `SavingsItem` as domain methods that return a
+`LedgerRuleViolation`, and are mutation-tested without a database. The ledger
+configuration targets the HTTP and persistence shell around them: the ledger,
+payment, reversal and drawdown endpoints, violation-to-response mapping, item
+creation and details editing, and the dashboard and future-look queries. It
+requires 100% and excludes logging calls/logger category names and
+database-generated/default entity initializers from mutation, not financial
+logic. Its character spans isolate changed logic in existing files; update
+those spans when that code moves.
+
+Database-backed tests lease pooled LocalDB databases named
+`PenniesCount_TestPool_<migration-hash>_<slot>`. Each fixture resets its
+database when it starts; the ledger, drawdown and future-look classes also
+reset before each test.
+A per-slot lock file under `%TEMP%\PenniesCount.Tests` keeps concurrent runs
+apart. Pooled databases persist between runs to avoid creating a database for
+every mutant; adding or removing a migration starts a new pool. If an
+existing migration is edited in place, drop the `PenniesCount_TestPool_`
+databases for that hash. Migration tests use their own temporary databases. The forecast and
 details endpoints' non-financial OpenAPI name and description
 strings are outside their mutation spans. The ledger gate retains the
 future-look route and database-backed behavior; its term and purpose

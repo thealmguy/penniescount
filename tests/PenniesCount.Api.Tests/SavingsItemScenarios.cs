@@ -337,7 +337,7 @@ public sealed class SavingsItemScenarios(DatabaseFactory factory) : IClassFixtur
         [Fact]
         public async Task Given_a_legacy_stored_category_When_migrating_Then_goal_data_is_preserved_and_category_is_derived()
         {
-            var isolated = new DatabaseFactory();
+            var isolated = DatabaseFactory.Dedicated();
             try
             {
                 using var scope = isolated.Services.CreateScope();

@@ -4,8 +4,9 @@
     "mutate": [
       "**/SavingsDrawdownEndpoints.cs",
       "**/SavingsLedgerEndpoints.cs",
-      "**/SavingsItemEndpoints.cs{513..680}{1118..1246}{1817..2225}{3271..4119}{4346..5575}",
-      "**/DashboardEndpoints.cs{1160..1450}{2370..2510}{2926..4429}",
+      "**/LedgerRuleResults.cs",
+      "**/SavingsItemEndpoints.cs{513..680}{1118..1246}{1774..1876}{2684..2998}{3242..3979}",
+      "**/DashboardEndpoints.cs{1160..1450}{2370..2510}{2926..3055}",
       "**/BudgetSnapshot.cs{1180..1280}",
       "**/FutureLookEndpoints.cs{0..550}"
     ],
