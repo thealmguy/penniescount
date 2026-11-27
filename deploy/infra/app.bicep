@@ -39,7 +39,7 @@ module sites 'modules/sites.bicep' = {
   scope: apps
   params: {
     location: location
-    planId: resourceId(sharedResourceGroup, 'Microsoft.Web/serverfarms', appServicePlanName)
+    planId: resourceId(subscription().subscriptionId, sharedResourceGroup, 'Microsoft.Web/serverfarms', appServicePlanName)
     apiAppName: apiAppName
     webAppName: webAppName
   }
