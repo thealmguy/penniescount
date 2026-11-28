@@ -29,10 +29,10 @@ resource database 'Microsoft.Sql/servers/databases@2023-08-01' = {
   }, serverless ? {
     autoPauseDelay: sqlAutoPauseDelay
     minCapacity: json(sqlMinCapacity)
-  } : {}, {
-    useFreeLimit: sqlUseFreeLimit
-    freeLimitExhaustionBehavior: sqlUseFreeLimit ? 'AutoPause' : 'BillOverUsage'
-  })
+  } : {}, sqlUseFreeLimit ? {
+    useFreeLimit: true
+    freeLimitExhaustionBehavior: 'AutoPause'
+  } : {})
 }
 
 @secure()

@@ -57,7 +57,7 @@ dotnet build .\PenniesCount.sln
 dotnet test .\PenniesCount.sln
 ```
 
-Run the full mutation gate, all four configurations below in parallel:
+Run the full mutation gate, all five configurations below in parallel:
 
 ```powershell
 .\scripts\mutation.ps1
@@ -112,6 +112,13 @@ Push-Location .\tests\PenniesCount.Web.Tests
 try { dotnet stryker --config-file stryker-details-validation.json } finally { Pop-Location }
 ```
 
+Run the Web canonical-host redirect gate:
+
+```powershell
+Push-Location .\tests\PenniesCount.Web.Tests
+try { dotnet stryker --config-file stryker-canonical-host.json } finally { Pop-Location }
+```
+
 Ledger write rules live on `SavingsItem` as domain methods that return a
 `LedgerRuleViolation`, and are mutation-tested without a database. The ledger
 configuration targets the HTTP and persistence shell around them: the ledger,
@@ -154,7 +161,7 @@ The public repository contains deployment logic, not environment identifiers.
 Never commit tenant/subscription IDs, Azure resource names, directory object IDs,
 hostnames, resolved parameter files, access tokens or cloud app settings.
 
-The root `azure-pipelines.yaml` has two stages:
+The root `azure-pipelines.yaml` has three stages:
 
 - **Build**: Windows Server 2025 (LocalDB), Release build, all tests, zipped API
   and Web publish output, an idempotent EF migration script and compiled Bicep
@@ -163,10 +170,16 @@ The root `azure-pipelines.yaml` has two stages:
   environment. Provisions shared and project resources using Bicep, migrates
   SQL, grants the API identity data-only permissions, deploys the packages and
   verifies health, anonymous API rejection and the Web sign-in redirect.
+- **DeployPrd**: the same template and artifacts after DeployDev succeeds,
+  through the `pcs-prd` environment (approval required) with the `pcs-prd`
+  variable group and `pcs-azure-prd` service connection into the separate
+  production subscription. It additionally binds the Web custom domain with
+  managed certificates and verifies the canonical-host redirects (see
+  [Production](#production)).
 
-The optional `runMutation` queue-time parameter defaults to `true`. Its four
+The optional `runMutation` queue-time parameter defaults to `true`. Its five
 matrix jobs use the existing MTP gate script (`-Gate ledger`, `api`, `core`,
-`contracts`); each has its own agent/workspace. Set it to `false` to remove
+`contracts`, `web`); each has its own agent/workspace. Set it to `false` to remove
 the jobs entirely. Parallel execution depends on the organization's hosted-job
 quota; with one parallel job, they queue instead. Reports are restricted to
 pipeline artifacts; no Stryker dashboard uploads are configured.
@@ -204,7 +217,8 @@ and scope are stored privately in Azure DevOps.
    and pipeline principal; the pipeline app emits security-group claims.
    Complete the federated service connection with the returned client ID.
    Do not run this script in CI or publish its local output.
-3. Create a private variable group `pcs-dev` with the following schema.
+3. Create a private variable group `pcs-dev` with the following schema
+   (production uses `pcs-prd` with the same schema; see [Production](#production)).
    **Mark every identifying value secret**:
 
    | Secret variable | Meaning |
@@ -217,21 +231,22 @@ and scope are stored privately in Azure DevOps.
    | `sqlAdminGroupObjectId`, `sqlAdminGroupName` | SQL Entra administrator group |
    | `apiAppName`, `webAppName` | Globally unique Web App names |
    | `entraAppNamePrefix` | Environment-specific Entra application unique names |
+   | `webCustomDomain` | Optional apex Web domain (no scheme or `www`); omit in dev |
 
    Also create these non-identifying configuration variables (plain values):
 
-   | Variable | Dev value |
-   | --- | --- |
-   | `appServicePlanSku` | `F1` |
-   | `sqlSkuName` | `GP_S_Gen5_2` |
-   | `sqlUseFreeLimit` | `true` |
-   | `sqlAutoPauseDelay` | `60` |
-   | `sqlMaxSizeBytes` | `34359738368` |
-   | `sqlMinCapacity` | `0.5` |
+   | Variable | Dev value | Prod value |
+   | --- | --- | --- |
+   | `appServicePlanSku` | `F1` | `B1` |
+   | `sqlSkuName` | `GP_S_Gen5_2` | `Basic` (5 DTU) |
+   | `sqlUseFreeLimit` | `true` | `false` |
+   | `sqlAutoPauseDelay` | `60` | `60` (ignored for DTU) |
+   | `sqlMaxSizeBytes` | `34359738368` | `2147483648` |
+   | `sqlMinCapacity` | `0.5` | `0.5` (ignored for DTU) |
 
-   Configure all entries: unresolved Azure DevOps variable references are not
-   defaults. The `.bicepparam` files read environment variables; they never hold
-   environment-specific literals.
+   Configure all entries except `webCustomDomain`: unresolved Azure DevOps
+   variable references are not defaults. The `.bicepparam` files read
+   environment variables; they never hold environment-specific literals.
 4. Create a pipeline pointing at the GitHub repository's
    `azure-pipelines.yaml`, using the existing GitHub connection when authorized.
    Permit only this pipeline to use its service connection and variable group.
@@ -317,15 +332,91 @@ Entra app registrations replicate asynchronously in Microsoft Graph. The first
 app deployment can therefore fail transiently; `Deploy-Infra.ps1` retries
 replication errors (up to four attempts) because the deployment is idempotent.
 
-For production, invoke the same deploy stage template with a separate stage
-name, `environment: pcs-prd`, `variableGroup: pcs-prd`, and its own federated
-service connection. Configure names, subscription and SQL/plan SKU
-settings in that private group, and add an environment approval. Migration and
-ZIP deployment are in-place: without slots, an F1 deployment may interrupt
-active Blazor circuits. An app-package rollback does not undo schema changes.
-For a paid DTU SKU such as `Basic`, set `sqlUseFreeLimit=false` and a compatible
-`sqlMaxSizeBytes` (for Basic, at most `2147483648`); serverless-only settings are
-omitted. A free allowance with an incompatible SKU is rejected explicitly.
+Migration and ZIP deployment are in-place: without slots, a deployment may
+interrupt active Blazor circuits. An app-package rollback does not undo schema
+changes. For a paid DTU SKU such as `Basic`, set `sqlUseFreeLimit=false` and a
+compatible `sqlMaxSizeBytes` (for Basic, at most `2147483648`); serverless-only
+settings and free-offer properties are omitted. A free allowance with an
+incompatible SKU is rejected explicitly.
+
+### Production
+
+Production is isolated from dev: a separate subscription, service connection,
+pipeline identity, SQL administrator group, shared RG, B1 plan, SQL server and
+Entra applications. It uses the same templates and scripts, with values only
+in the private `pcs-prd` variable group.
+
+1. Repeat the [one-time setup](#one-time-azure-devops-setup) for production:
+   an Azure Resource Manager service connection named `pcs-azure-prd`
+   (workload identity federation, scoped to the production subscription), then
+   `Initialize-DeploymentIdentity.ps1` with the production subscription and a
+   distinct pipeline app and SQL administrator group name.
+2. Create the `pcs-prd` variable group using the prod values above, but leave
+   `webCustomDomain` unset for the first deployment.
+3. Create the `pcs-prd` environment with an **Approvals** check plus the same
+   branch controls on the environment, connection and variable group. Permit
+   only this pipeline to use them.
+4. Run the pipeline and approve DeployPrd. This creates the apps on their
+   default hostnames.
+5. Assign production users to the prod Web application's role
+   ([Managing access](#managing-access)).
+
+Non-Free plans enable **Always On** for both apps, so B1 avoids idle cold
+starts and dropped Blazor circuits; F1 cannot. B1 carries an App Service SLA
+with one instance.
+
+#### Custom domain
+
+The Web app is served on the canonical `https://<domain>` (the apex). Requests to
+`https://www.<domain>`, `http://<domain>`, `http://www.<domain>` and the Web
+`*.azurewebsites.net` hostname are permanently (301) redirected to it,
+preserving the path and query. App Service HTTPS-Only redirects HTTP to HTTPS,
+and the Web app's canonical-host middleware (`CanonicalHost` setting, set only
+when `webCustomDomain` is configured) redirects other hosts, so `http://www`
+takes two 301 hops. Entra sign-in URIs use the canonical host. The API keeps
+its default hostname.
+
+TLS uses free App Service Managed Certificates for the apex and `www`, which
+renew automatically. `Deploy-CustomDomain.ps1` adds the hostname bindings,
+creates the certificates and binds them with SNI. It is idempotent and is a
+no-op while `webCustomDomain` is unset. Bindings are managed by the script, not
+Bicep, so redeployments never reset TLS.
+
+To enable it after the first production deployment:
+
+1. Read the DNS values locally while signed into the production subscription:
+
+   ```powershell
+   az webapp show -g $appResourceGroup -n $webAppName `
+     --query "{verificationId: customDomainVerificationId, ip: inboundIpAddress, host: defaultHostName}"
+   ```
+
+2. At the DNS provider (IONOS: **Domains & SSL → DNS**), add these records:
+
+   | Type | Host name | Value |
+   | --- | --- | --- |
+   | `A` | `@` | `ip` |
+   | `TXT` | `asuid` | `verificationId` |
+   | `CNAME` | `www` | `host` |
+   | `TXT` | `asuid.www` | `verificationId` |
+
+   Delete any existing default `A`/`AAAA`/`CNAME` records for `@` and `www`
+   first (IONOS adds parking records). An `AAAA` record would bypass App Service.
+   If a `CAA` record exists, it must allow `digicert.com`. Wait for propagation,
+   for example `Resolve-DnsName asuid.<domain> -Type TXT`.
+3. Set `webCustomDomain` to the apex domain in `pcs-prd` and rerun the
+   pipeline. Infrastructure switches the Entra redirect URIs, `AllowedHosts` and
+   `CanonicalHost` to the domain, then the script binds the hostnames and
+   issues certificates; issuance can take several minutes. The smoke checks then
+   require the canonical URL to redirect to Entra sign-in and every alias to
+   reach it through 301 redirects only.
+
+The apex `A` record targets the app's inbound IP, which can change if the plan
+is recreated or moved; update the record if it does. During the first
+enablement, the Web app redirects to the domain shortly before its certificate
+is bound. Verify DNS before setting `webCustomDomain`: if binding then fails,
+the Web app already redirects to the unbound domain. Fix DNS and rerun, or
+remove `webCustomDomain` and rerun to restore the default hostname.
 
 ## Development approach
 

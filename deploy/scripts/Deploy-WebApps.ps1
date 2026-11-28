@@ -51,7 +51,9 @@ try {
         }
     }
     finally { $response.Dispose() }
-    $response = $http.GetAsync("https://$webHostname/").GetAwaiter().GetResult()
+    $domain = (Get-OptionalDeploymentVariable PCS_WEB_CUSTOM_DOMAIN).ToLowerInvariant()
+    $canonicalHost = if ($domain) { $domain } else { $webHostname }
+    $response = $http.GetAsync("https://$canonicalHost/").GetAwaiter().GetResult()
     try {
         if ([int]$response.StatusCode -ne 302 -or
             $response.Headers.Location.Host -ne 'login.microsoftonline.com') {
@@ -59,6 +61,24 @@ try {
         }
     }
     finally { $response.Dispose() }
+    if ($domain) {
+        # Every alias must reach the canonical URL through permanent redirects only.
+        foreach ($alias in @("https://www.$domain/", "http://$domain/", "http://www.$domain/", "https://$webHostname/")) {
+            $url = [Uri]$alias
+            for ($hop = 1; $url.AbsoluteUri -ne "https://$domain/"; $hop++) {
+                if ($hop -gt 2) { throw 'Web canonical redirect check failed (too many redirects).' }
+                $response = $http.GetAsync($url).GetAwaiter().GetResult()
+                try {
+                    if ([int]$response.StatusCode -ne 301 -or -not $response.Headers.Location) {
+                        throw "Web canonical redirect check failed (HTTP $([int]$response.StatusCode))."
+                    }
+                    $url = [Uri]::new($url, $response.Headers.Location)
+                }
+                finally { $response.Dispose() }
+            }
+        }
+        Write-Host 'Canonical host checks passed: aliases permanently redirect to the custom domain.'
+    }
     Write-Host 'Smoke checks passed: health 200, anonymous API 401, Web sign-in redirect 302.'
 }
 finally { $http.Dispose() }

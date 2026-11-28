@@ -23,3 +23,10 @@ stages:
       environment: pcs-dev
       variableGroup: pcs-dev
       serviceConnection: pcs-azure-dev
+  - template: deploy/pipelines/deploy.yaml
+    parameters:
+      stageName: DeployPrd
+      dependsOn: [DeployDev]
+      environment: pcs-prd
+      variableGroup: pcs-prd
+      serviceConnection: pcs-azure-prd

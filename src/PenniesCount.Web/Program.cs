@@ -1,3 +1,4 @@
+using PenniesCount.Web;
 using PenniesCount.Web.Components;
 using PenniesCount.Web.Services;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -50,6 +51,7 @@ builder.Services.AddScoped(services => new BudgetClient(
 
 var app = builder.Build();
 
+app.UseCanonicalHostRedirect();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);

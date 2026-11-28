@@ -7,10 +7,13 @@ parameters:
     type: string
   - name: serviceConnection
     type: string
+  - name: dependsOn
+    type: object
+    default: [Build]
 
 stages:
   - stage: ${{ parameters.stageName }}
-    dependsOn: Build
+    dependsOn: ${{ parameters.dependsOn }}
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
     variables:
       - group: ${{ parameters.variableGroup }}
@@ -44,6 +47,8 @@ stages:
                       $root = "$(Pipeline.Workspace)/deployment"
                       & "$root/deploy/scripts/Deploy-Infra.ps1" -InfraDirectory "$root/deploy/infra" -DeploymentName "pcs-$(Build.BuildId)"
                       if ($LASTEXITCODE -ne 0) { throw 'Infrastructure deployment failed.' }
+                      & "$root/deploy/scripts/Deploy-CustomDomain.ps1"
+                      if ($LASTEXITCODE -ne 0) { throw 'Custom domain binding failed.' }
                       & "$root/deploy/scripts/Invoke-SqlScript.ps1" -MigrationScript "$root/db/migrations.sql"
                       if ($LASTEXITCODE -ne 0) { throw 'Database deployment failed.' }
                       & "$root/deploy/scripts/Deploy-WebApps.ps1" -ApiPackage "$root/Api/app.zip" -WebPackage "$root/Web/app.zip"
@@ -68,3 +73,4 @@ stages:
                     PCS_API_APP_NAME: $(apiAppName)
                     PCS_WEB_APP_NAME: $(webAppName)
                     PCS_ENTRA_APP_NAME_PREFIX: $(entraAppNamePrefix)
+                    PCS_WEB_CUSTOM_DOMAIN: $(webCustomDomain)

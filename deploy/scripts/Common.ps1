@@ -29,6 +29,13 @@ function Get-DeploymentVariable {
     return $value
 }
 
+function Get-OptionalDeploymentVariable {
+    param([Parameter(Mandatory)][string]$Name)
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value) -or $value -match '^\$\(.+\)$') { return '' }
+    return $value.Trim()
+}
+
 function Register-DeploymentSecret {
     param([Parameter(Mandatory)][string]$Value)
     if ($env:TF_BUILD -eq 'True') {

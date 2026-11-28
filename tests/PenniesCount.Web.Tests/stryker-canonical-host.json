@@ -1,0 +1,12 @@
+{
+  "stryker-config": {
+    "project": "PenniesCount.Web.csproj",
+    "mutate": [ "**/CanonicalHostRedirect.cs" ],
+    "test-case-filter": "FullyQualifiedName~CanonicalHostScenarios",
+    "mutation-level": "Complete",
+    "test-runner": "mtp",
+    "concurrency": 1,
+    "reporters": [ "dots", "cleartext", "html", "json" ],
+    "thresholds": { "high": 100, "low": 100, "break": 100 }
+  }
+}

@@ -68,6 +68,8 @@ stages:
                   gate: core
                 Contracts:
                   gate: contracts
+                Web:
+                  gate: web
             steps:
               - checkout: self
                 persistCredentials: false

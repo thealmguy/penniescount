@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Runs the full Stryker mutation gate: all four configurations in parallel.
+Runs the full Stryker mutation gate: all five configurations in parallel.
 
 .DESCRIPTION
 Each gate runs in its own copy of the working tree. Stryker builds the test project
@@ -16,12 +16,13 @@ Reports are written to StrykerOutput\parallel-<timestamp>\<gate>.
 [CmdletBinding()]
 param(
     [Alias('Gate')]
-    [ValidateSet('ledger', 'api', 'core', 'contracts')]
+    [ValidateSet('ledger', 'api', 'core', 'contracts', 'web')]
     [string]$GateName,
     [int]$LedgerConcurrency = 5,
     [int]$ApiConcurrency = 2,
     [int]$CoreConcurrency = 1,
     [int]$ContractsConcurrency = 1,
+    [int]$WebConcurrency = 1,
     [switch]$Clean
 )
 
@@ -51,6 +52,7 @@ $gates = @(
     @{ Name = 'api'; Project = 'tests\PenniesCount.Api.Tests'; Config = 'stryker-config.json'; Concurrency = $ApiConcurrency }
     @{ Name = 'core'; Project = 'tests\PenniesCount.Core.Tests'; Config = 'stryker-working-days.json'; Concurrency = $CoreConcurrency }
     @{ Name = 'contracts'; Project = 'tests\PenniesCount.Web.Tests'; Config = 'stryker-details-validation.json'; Concurrency = $ContractsConcurrency }
+    @{ Name = 'web'; Project = 'tests\PenniesCount.Web.Tests'; Config = 'stryker-canonical-host.json'; Concurrency = $WebConcurrency }
 )
 if ($GateName) { $gates = @($gates | Where-Object Name -eq $GateName) }
 $allowed = 'Killed', 'Ignored', 'CompileError'

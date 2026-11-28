@@ -10,6 +10,7 @@ param entraDetails object
 param sqlHostname string
 @secure()
 param sqlDatabaseName string
+param webCustomDomain string
 var common = {
   ASPNETCORE_ENVIRONMENT: 'Production'
   ASPNETCORE_FORWARDEDHEADERS_ENABLED: 'true'
@@ -37,11 +38,15 @@ resource webSettings 'Microsoft.Web/sites/config@2024-11-01' = {
   parent: web
   name: 'appsettings'
   properties: union(common, {
-    AllowedHosts: siteDetails.webHostname
+    AllowedHosts: empty(webCustomDomain)
+      ? siteDetails.webHostname
+      : '${webCustomDomain};www.${webCustomDomain};${siteDetails.webHostname}'
     AzureAd__ClientId: entraDetails.webClientId
     AzureAd__CallbackPath: '/signin-oidc'
     AzureAd__ClientCredentials__0__SourceType: 'SignedAssertionFromManagedIdentity'
     ApiScope: entraDetails.apiScope
     ApiBaseUrl: 'https://${siteDetails.apiHostname}/'
+  }, empty(webCustomDomain) ? {} : {
+    CanonicalHost: webCustomDomain
   })
 }

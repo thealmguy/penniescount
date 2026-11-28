@@ -6,6 +6,7 @@ param planId string
 param apiAppName string
 @secure()
 param webAppName string
+param alwaysOn bool
 
 resource databaseIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${apiAppName}-db'
@@ -27,6 +28,7 @@ resource api 'Microsoft.Web/sites@2024-11-01' = {
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|10.0'
+      alwaysOn: alwaysOn
       minTlsVersion: '1.2'
       scmMinTlsVersion: '1.2'
       ftpsState: 'Disabled'
@@ -46,6 +48,7 @@ resource web 'Microsoft.Web/sites@2024-11-01' = {
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|10.0'
+      alwaysOn: alwaysOn
       minTlsVersion: '1.2'
       scmMinTlsVersion: '1.2'
       ftpsState: 'Disabled'
