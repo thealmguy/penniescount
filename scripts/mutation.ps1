@@ -27,6 +27,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Native exit codes are checked explicitly; robocopy reports success with codes below 8.
+$PSNativeCommandUseErrorActionPreference = $false
 $repo = Split-Path -Parent $PSScriptRoot
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $reports = Join-Path $repo "StrykerOutput\parallel-$stamp"
