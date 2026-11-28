@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -39,6 +40,20 @@ public sealed class AccessRoleScenarios
         using var response = await client.GetAsync("/role-probe");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public void Given_a_MicrosoftIdentity_challenge_When_browsing_Then_the_route_is_registered()
+    {
+        using var factory = CreateCloudFactory(null);
+        var endpoints = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints;
+
+        var routes = endpoints
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .Where(route => route is not null);
+        Assert.Contains(routes, route =>
+            route!.Contains("MicrosoftIdentity", StringComparison.OrdinalIgnoreCase));
     }
 
     private static WebApplicationFactory<Program> CreateCloudFactory(IdentityClaims? claims) =>

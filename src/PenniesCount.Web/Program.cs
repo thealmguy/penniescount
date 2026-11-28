@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Identity.Web;
+using Microsoft.Identity.Web.UI;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,6 +37,7 @@ if (useEntra)
     builder.Services.AddScoped<IApiAccessTokenProvider, ApiAccessTokenProvider>();
     builder.Services.AddMicrosoftIdentityConsentHandler();
 }
+builder.Services.AddControllersWithViews().AddMicrosoftIdentityUI();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -67,6 +69,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapGet("/access-denied", () => Results.Text("This account is not permitted to use PenniesCount.",
     statusCode: StatusCodes.Status403Forbidden)).AllowAnonymous();
+app.MapControllers();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
