@@ -390,7 +390,8 @@ To enable it after the first production deployment:
 
    ```powershell
    az webapp show -g $appResourceGroup -n $webAppName `
-     --query "{verificationId: customDomainVerificationId, ip: inboundIpAddress, host: defaultHostName}"
+     --query "{verificationId: customDomainVerificationId, host: defaultHostName}"
+   Resolve-DnsName <host> -Type A   # the final A record is the inbound IP
    ```
 
 2. At the DNS provider (IONOS: **Domains & SSL → DNS**), add these records:
