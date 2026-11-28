@@ -82,7 +82,8 @@ stages:
                   $PSNativeCommandUseErrorActionPreference = $true
                   sqllocaldb start MSSQLLocalDB
                   dotnet tool restore
-                  .\scripts\mutation.ps1 -Gate "$(gate)"
+                  # Hosted agents have few cores; parallel LocalDB test runs exceed Stryker's timeouts.
+                  .\scripts\mutation.ps1 -Gate "$(gate)" -LedgerConcurrency 1 -ApiConcurrency 1
                 displayName: Mutation gate
               - task: PublishPipelineArtifact@1
                 condition: succeededOrFailed()

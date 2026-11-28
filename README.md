@@ -179,7 +179,9 @@ The root `azure-pipelines.yaml` has three stages:
 
 The optional `runMutation` queue-time parameter defaults to `true`. Its five
 matrix jobs use the existing MTP gate script (`-Gate ledger`, `api`, `core`,
-`contracts`, `web`); each has its own agent/workspace. Set it to `false` to remove
+`contracts`, `web`); each has its own agent/workspace and runs at concurrency 1,
+because parallel LocalDB test runs on small hosted agents exceed Stryker's
+timeouts. Set it to `false` to remove
 the jobs entirely. Parallel execution depends on the organization's hosted-job
 quota; with one parallel job, they queue instead. Reports are restricted to
 pipeline artifacts; no Stryker dashboard uploads are configured.
